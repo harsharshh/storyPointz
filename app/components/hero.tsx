@@ -35,13 +35,6 @@ export default function Hero() {
       data-anim="hero"
       aria-labelledby="hero-title"
     >
-      {/* Background accents (switch with theme) */}
-      <div className="pointer-events-none absolute inset-0 -z-10">
-        {/* Light mode gradient background */}
-        <div className="absolute inset-0 bg-gradient-to-br from-indigo-100 via-emerald-50 to-white dark:hidden" />
-        {/* Dark mode gradient background */}
-        <div className="absolute inset-0 hidden dark:block bg-[radial-gradient(60%_40%_at_50%_0%,rgba(109,93,246,0.35),transparent_70%),radial-gradient(40%_40%_at_100%_60%,rgba(34,197,94,0.25),transparent_70%),linear-gradient(to_bottom,#0B0B10,rgba(11,11,16,0.85))]" />
-      </div>
 
       <div className="mx-auto grid max-w-6xl grid-cols-1 items-center justify-center gap-10 px-6 py-14 sm:py-20 md:grid-cols-2 min-h-screen">
         {/* Left content */}
@@ -57,12 +50,6 @@ export default function Hero() {
           <p data-anim="hero-item" className="mt-5 max-w-prose text-base text-gray-600 dark:text-white/80">
             Plan poker made easy—private votes, instant reveal, quick consensus.
           </p>
-
-          {/* <ul className="mt-6 space-y-2 text-sm text-gray-600 dark:text-white/70">
-            <li className="flex items-center gap-2"><Dot/> Real‑time rooms with private votes</li>
-            <li className="flex items-center gap-2"><Dot/> Fibonacci / T‑shirt / custom decks</li>
-            <li className="flex items-center gap-2"><Dot/> Consensus, average & notes history</li>
-          </ul> */}
 
           <div data-anim="hero-item" className="mt-8 flex flex-col gap-3 sm:flex-row">
             <Link

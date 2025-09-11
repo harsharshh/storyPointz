@@ -4,9 +4,11 @@ import Link from 'next/link';
 import gsap from 'gsap';
 import { useGSAP } from '@gsap/react';
 import { useRef } from 'react';
+import { usePathname } from 'next/navigation';
 
 export default function Header() {
   const logoRef = useRef<HTMLAnchorElement | null>(null);
+  const pathname = usePathname();
 
   useGSAP(() => {
     // Subtle intro: fade + slight rise + letter spacing ease
@@ -42,12 +44,14 @@ export default function Header() {
 
         {/* Right actions: Start session + user profile */}
         <div className="flex items-center gap-3">
-          <Link
-            href="/session/new"
-            className="hidden sm:inline-flex h-9 items-center justify-center rounded-full bg-indigo-600 px-4 text-sm font-medium text-white shadow-sm transition hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-indigo-500"
-          >
-            Start a session
-          </Link>
+          {pathname === '/' && (
+            <Link
+              href="/session/new"
+              className="hidden sm:inline-flex h-9 items-center justify-center rounded-full bg-indigo-600 px-4 text-sm font-medium text-white shadow-sm transition hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-indigo-500"
+            >
+              Start a session
+            </Link>
+          )}
 
           {/* User profile (icon button) */}
           <button
