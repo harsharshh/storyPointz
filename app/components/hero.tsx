@@ -223,7 +223,7 @@ function HeroDeckVisual() {
           {values.map((v, i) => (
   <div
     key={i}
-    className="spz-card absolute left-1/2 top-1/2 aspect-[3/4] w-32 select-none rounded-2xl border border-black/10 bg-white text-center shadow-lg dark:border-white/10 opacity-0"
+    className="spz-card absolute left-1/2 top-1/2 aspect-[3/4] w-32 select-none rounded-2xl border border-black/10 bg-white text-center shadow-lg dark:border-white/10 opacity-0 dark:bg-gray-900"
     style={getGradStyle(i)}
     aria-label={v === '☕' ? 'Coffee break card' : `Value ${v}`}
   >

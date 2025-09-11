@@ -40,8 +40,36 @@ export default function Header() {
           </span>
         </Link>
 
-        {/* (Right side reserved for future actions) */}
-        <div className="flex items-center gap-2" />
+        {/* Right actions: Start session + user profile */}
+        <div className="flex items-center gap-3">
+          <Link
+            href="/session/new"
+            className="hidden sm:inline-flex h-9 items-center justify-center rounded-full bg-indigo-600 px-4 text-sm font-medium text-white shadow-sm transition hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-indigo-500"
+          >
+            Start a session
+          </Link>
+
+          {/* User profile (icon button) */}
+          <button
+            type="button"
+            aria-label="User profile"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-black/10 bg-white/70 backdrop-blur text-gray-700 transition cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-white/10 dark:bg-white/10 dark:text-white"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              className="h-5 w-5"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden
+            >
+              <path d="M20 21a8 8 0 0 0-16 0"/>
+              <circle cx="12" cy="8" r="4"/>
+            </svg>
+          </button>
+        </div>
       </div>
     </header>
   );
