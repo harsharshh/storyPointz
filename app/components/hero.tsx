@@ -5,7 +5,16 @@ import gsap from 'gsap';
 import { useGSAP } from '@gsap/react';
 import { useRef } from 'react';
 
+const palette: [string, string][] = [
+    ['#6366f1', '#22c55e'], // indigo → emerald
+    ['#06b6d4', '#a855f7'], // cyan → violet
+    ['#f59e0b', '#ef4444'], // amber → red
+    ['#10b981', '#3b82f6'], // emerald → blue
+    ['#e879f9', '#22d3ee'], // fuchsia → sky
+  ];
+
 export default function Hero() {
+   
   const container = useRef<HTMLDivElement | null>(null);
   useGSAP(() => {
     const items = gsap.utils.toArray<HTMLElement>('[data-anim="hero-item"]');
@@ -33,12 +42,12 @@ export default function Hero() {
         <div className="absolute inset-0 hidden dark:block bg-[radial-gradient(60%_40%_at_50%_0%,rgba(109,93,246,0.35),transparent_70%),radial-gradient(40%_40%_at_100%_60%,rgba(34,197,94,0.25),transparent_70%),linear-gradient(to_bottom,#0B0B10,rgba(11,11,16,0.85))]" />
       </div>
 
-      <div className="mx-auto grid max-w-6xl grid-cols-1 items-center gap-10 px-6 py-14 sm:py-20 md:grid-cols-2">
+      <div className="mx-auto grid max-w-6xl grid-cols-1 items-center justify-center gap-10 px-6 py-14 sm:py-20 md:grid-cols-2 min-h-screen">
         {/* Left content */}
         <div className="max-w-xl">
           
 
-          <h1 id="hero-title" data-anim="hero-item" className="text-4xl font-extrabold leading-[1.1] tracking-tight sm:text-6xl">
+          <h1 id="hero-title" data-anim="hero-item" className="text-4xl font-extrabold leading-[1.1] tracking-tight sm:text-6xl dark:text-white">
             Plan smarter.
             <br />
             Estimate faster.
@@ -61,17 +70,12 @@ export default function Hero() {
             >
               Start a session
             </Link>
-            <Link
-              href="/how-it-works"
-              className="inline-flex h-11 items-center justify-center rounded-full border border-black/15 bg-black/5 px-6 font-medium transition hover:bg-black/10 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-white/15 dark:bg-white/5 dark:hover:bg-white/10"
-            >
-              How it works
-            </Link>
+            
           </div>
         </div>
 
         {/* Right: animated deck visual */}
-        <div className="relative flex justify-center" aria-hidden>
+        <div className="relative hidden md:flex justify-center" aria-hidden>
           <HeroDeckVisual />
         </div>
       </div>
@@ -82,7 +86,7 @@ export default function Hero() {
 function HeroDeckVisual() {
   const root = useRef<HTMLDivElement | null>(null);
   useGSAP(() => {
-    let listeners: Array<() => void> = [];
+    const listeners: Array<() => void> = [];
     const ctx = gsap.context(() => {
       const host = root.current as HTMLDivElement | null;
       const cards = gsap.utils.toArray<HTMLElement>('.spz-card');
@@ -90,7 +94,7 @@ function HeroDeckVisual() {
 
       // Final fan targets
       const angles = [-50, -25, 0, 25, 50];
-      const radius = 170;
+      const radius = 200;
       const targets = angles.map((deg) => {
         const a = (deg * Math.PI) / 180;
         const x = radius * Math.sin(a);
@@ -116,7 +120,7 @@ function HeroDeckVisual() {
           y: 0,
           z: 0,
           rotateY: 0,
-          opacity: 0,
+          autoAlpha: 0,
           scale: 0.96,
           filter: 'blur(10px)',
           willChange: 'transform, filter, opacity',
@@ -125,7 +129,7 @@ function HeroDeckVisual() {
 
       // 2) Entrance: center-out soft appear with reduced blur (they're still stacked)
       gsap.to(cards, {
-        opacity: 1,
+        autoAlpha: 1,
         scale: 1,
         filter: 'blur(6px)',
         duration: 0.45,
@@ -192,28 +196,86 @@ function HeroDeckVisual() {
       }, '>-0.2');
     }, root);
 
+          // Animate coffee steam (if present)
+      const steams = gsap.utils.toArray<SVGPathElement>('.spz-steam');
+      if (steams.length) {
+        gsap.fromTo(steams, { opacity: 0, y: 6 }, { opacity: 1, y: -6, duration: 1.6, ease: 'sine.inOut', repeat: -1, yoyo: true, stagger: 0.2, delay: 0.2 });
+      }
+
     return () => { listeners.forEach((off) => off()); ctx.revert(); };
   }, { scope: root });
 
   const values = ['☕', '1', '2', '3', '5'];
 
   return (
-    <div ref={root} className="relative w-full h-[360px] sm:h-[420px]">
+    <div ref={root} className="relative w-full h-[480px] sm:h-[560px]">
       <div className="relative h-full w-full perspective-[1000px] [transform-style:preserve-3d] overflow-hidden">
         {/* Cards stage */}
         <div className="spz-stage relative h-full w-full transition-all">
           {values.map((v, i) => (
-            <div
-              key={i}
-              className="spz-card absolute left-1/2 top-1/2 aspect-[3/4] w-20 select-none rounded-xl border border-black/10 bg-white text-center text-base font-semibold text-gray-800 shadow-md dark:border-white/10 dark:bg-white/5 dark:text-white/80"
-            >
-              <div className="flex h-full items-center justify-center">{v}</div>
-            </div>
-          ))}
+  <div
+    key={i}
+    className="spz-card absolute left-1/2 top-1/2 aspect-[3/4] w-32 select-none rounded-2xl border border-black/10 bg-white text-center shadow-lg dark:border-white/10 opacity-0 dark:bg-gray-900"
+    style={{ ['--g1' as any]: palette[i % palette.length][0], ['--g2' as any]: palette[i % palette.length][1], transform: 'translate(-50%, -50%)' }}
+    aria-label={v === '☕' ? 'Coffee break card' : `Value ${v}`}
+  >
+    {v === '☕' ? (
+      <svg viewBox="0 0 120 140" className="h-full w-full" aria-hidden>
+        <defs>
+          <linearGradient id={`spz-grad-${i}`} x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" style={{ stopColor: 'var(--g1)' }} />
+            <stop offset="100%" style={{ stopColor: 'var(--g2)' }} />
+          </linearGradient>
+        </defs>
+        <g>
+          {/* shadow */}
+          <ellipse cx="60" cy="104" rx="38" ry="8" fill="rgba(0,0,0,0.08)" className="dark:fill-white/10"/>
+          {/* cup body */}
+          <rect x="34" y="54" width="52" height="38" rx="8" fill={`url(#spz-grad-${i})`} />
+          {/* cup lip highlight */}
+          <rect x="34" y="54" width="52" height="6" rx="3" fill="#fff" fillOpacity="0.2"/>
+          {/* handle */}
+          <path d="M86 60c10 0 16 8 12 16-3 6-9 8-18 8" fill="none" stroke={`url(#spz-grad-${i})`} strokeWidth="6" strokeLinecap="round"/>
+          {/* steam */}
+          <g stroke={`url(#spz-grad-${i})`} strokeWidth="3" strokeLinecap="round" fill="none">
+            <path className="spz-steam" d="M48 48c0-8 8-8 8-16" />
+            <path className="spz-steam" d="M60 48c0-8 8-8 8-16" />
+            <path className="spz-steam" d="M72 48c0-8 8-8 8-16" />
+          </g>
+        </g>
+      </svg>
+    ) : (
+      <svg viewBox="0 0 120 140" className="h-full w-full" aria-hidden>
+        <defs>
+          <linearGradient id={`spz-grad-${i}`} x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" style={{ stopColor: 'var(--g1)' }} />
+            <stop offset="100%" style={{ stopColor: 'var(--g2)' }} />
+          </linearGradient>
+        </defs>
+        <text
+          x="60"
+          y="80"
+          textAnchor="middle"
+          dominantBaseline="middle"
+          fontFamily="ui-sans-serif, system-ui, -apple-system, Segoe UI"
+          fontSize="82"
+          fontWeight="800"
+          fill={`url(#spz-grad-${i})`}
+          stroke="currentColor"
+          strokeOpacity="0.15"
+          strokeWidth="1.5"
+        >
+          {v}
+        </text>
+      </svg>
+    )}
+  </div>
+))}
         </div>
       </div>
     </div>
   );
+
 }
 
 function Dot() {
