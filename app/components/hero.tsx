@@ -4,6 +4,7 @@ import Link from 'next/link';
 import gsap from 'gsap';
 import { useGSAP } from '@gsap/react';
 import { useRef } from 'react';
+import type { CSSProperties } from 'react';
 
 const palette: [string, string][] = [
     ['#6366f1', '#22c55e'], // indigo → emerald
@@ -205,6 +206,13 @@ function HeroDeckVisual() {
     return () => { listeners.forEach((off) => off()); ctx.revert(); };
   }, { scope: root });
 
+  type CardVars = CSSProperties & { ['--g1']?: string; ['--g2']?: string };
+  const getGradStyle = (i: number): CardVars => ({
+    '--g1': palette[i % palette.length][0],
+    '--g2': palette[i % palette.length][1],
+    transform: 'translate(-50%, -50%)',
+  });
+
   const values = ['☕', '1', '2', '3', '5'];
 
   return (
@@ -215,8 +223,8 @@ function HeroDeckVisual() {
           {values.map((v, i) => (
   <div
     key={i}
-    className="spz-card absolute left-1/2 top-1/2 aspect-[3/4] w-32 select-none rounded-2xl border border-black/10 bg-white text-center shadow-lg dark:border-white/10 opacity-0 dark:bg-gray-900"
-    style={{ ['--g1' as any]: palette[i % palette.length][0], ['--g2' as any]: palette[i % palette.length][1], transform: 'translate(-50%, -50%)' }}
+    className="spz-card absolute left-1/2 top-1/2 aspect-[3/4] w-32 select-none rounded-2xl border border-black/10 bg-white text-center shadow-lg dark:border-white/10 opacity-0"
+    style={getGradStyle(i)}
     aria-label={v === '☕' ? 'Coffee break card' : `Value ${v}`}
   >
     {v === '☕' ? (
@@ -276,8 +284,4 @@ function HeroDeckVisual() {
     </div>
   );
 
-}
-
-function Dot() {
-  return <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500" />;
 }

@@ -29,22 +29,22 @@ export function ThemeProvider({ children }: { children: React.ReactNode }){
     const sys = !!mql?.matches;
     setSystemDark(sys);
 
-    if(stored === 'dark' || stored === 'light'){
+    if (stored === 'dark' || stored === 'light') {
       setPreference(stored);
       apply(stored);
-    } else {
+    } else if (preference === null) {
       apply(sys ? 'dark' : 'light');
     }
 
     const onChange = (e: MediaQueryListEvent) => {
       setSystemDark(e.matches);
-      if(preference === null){
+      if (preference === null) {
         apply(e.matches ? 'dark' : 'light');
       }
     };
     mql?.addEventListener?.('change', onChange);
     return () => mql?.removeEventListener?.('change', onChange);
-  }, []);
+  }, [preference]);
 
   const theme: Scheme = preference ?? (systemDark ? 'dark' : 'light');
 
