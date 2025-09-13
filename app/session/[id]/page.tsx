@@ -3,11 +3,12 @@ import { notFound } from "next/navigation";
 import SessionGate from "./session-gate";
 
 interface Props {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }
 
 export default async function SessionPage({ params }: Props) {
-  const session = await prisma.session.findUnique({ where: { id: params.id } });
+  const { id } = await params;
+  const session = await prisma.session.findUnique({ where: { id } });
   if (!session) return notFound();
 
   return (

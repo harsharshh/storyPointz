@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Header from "../../components/header";
 
 export default function RoomShell({ sessionId, sessionName, user }) {
   const values = ["0", "1", "2", "3", "5", "8", "13", "21", "34", "55", "89", "?", "☕"];
   const [selected, setSelected] = useState(null);
   const [copied, setCopied] = useState(false);
+  const [members, setMembers] = useState([]);
 
   useEffect(() => {
     if (!copied) return;
@@ -24,6 +25,49 @@ export default function RoomShell({ sessionId, sessionName, user }) {
     }
   }
 
+  // Realtime: subscribe to presence if configured
+  const pusherKey = process.env.NEXT_PUBLIC_PUSHER_KEY;
+  const pusherCluster = process.env.NEXT_PUBLIC_PUSHER_CLUSTER || "mt1";
+  useEffect(() => {
+    if (!user?.id || !pusherKey) return;
+    let pusher; let channel;
+    (async () => {
+      const Pusher = (await import("pusher-js")).default;
+      pusher = new Pusher(pusherKey, {
+        cluster: pusherCluster,
+        authEndpoint: "/api/realtime/auth",
+        auth: {
+          headers: {
+            "x-spz-user-id": user.id,
+            "x-spz-user-name": user.name || "Guest user",
+          },
+        },
+      });
+      channel = pusher.subscribe(`presence-session-${sessionId}`);
+      channel.bind("pusher:subscription_succeeded", () => {
+        const list = [];
+        channel.members.each((m) => list.push({ id: m.id, name: m.info?.name }));
+        setMembers(list);
+      });
+      channel.bind("pusher:member_added", (m) => {
+        setMembers((prev) => {
+          if (prev.find((x) => x.id === m.id)) return prev;
+          return [...prev, { id: m.id, name: m.info?.name }];
+        });
+      });
+      channel.bind("pusher:member_removed", (m) => {
+        setMembers((prev) => prev.filter((x) => x.id !== m.id));
+      });
+      channel.bind("user-joined", (payload) => {
+        // Optional extra join animation hook
+      });
+    })();
+    return () => {
+      try { channel && pusher?.unsubscribe?.(`presence-session-${sessionId}`); } catch {}
+      try { pusher?.disconnect?.(); } catch {}
+    };
+  }, [user?.id, user?.name, sessionId, pusherKey, pusherCluster]);
+
   return (
     <div className="relative min-h-screen">
       <Header userName={user?.name} />
@@ -31,7 +75,7 @@ export default function RoomShell({ sessionId, sessionName, user }) {
       {/* Stage */}
       <div className="mx-auto max-w-6xl px-6">
         <div className="flex min-h-[70vh] flex-col items-center justify-center gap-8 pt-24 pb-44">
-          {/* Lonely + Invite */}
+          {/* Invite helper */}
           <div className="text-center">
             <p className="text-sm text-gray-600 dark:text-white/70">Feeling lonely? 🥱</p>
             <button
@@ -42,16 +86,86 @@ export default function RoomShell({ sessionId, sessionName, user }) {
             </button>
           </div>
 
-          {/* Board bubble */}
-          <div className="w-full max-w-xl rounded-3xl border bg-indigo-50/60 p-8 text-center text-gray-800 shadow-sm dark:border-white/10 dark:bg-white/5 dark:text-white">
-            <div className="text-sm font-medium">Pick your cards!</div>
-          </div>
+          {/* Compute seating */}
+          {(() => {
+            const selfId = user?.id;
+            const self = members.find((m) => m.id === selfId) || (selfId ? { id: selfId, name: user?.name } : null);
+            const others = members.filter((m) => m.id !== selfId);
+            const left = others[0] ? [others[0]] : [];
+            const right = others[1] ? [others[1]] : [];
+            const rest = others.slice(2);
+            const top = rest.slice(0, Math.ceil(rest.length / 2));
+            const bottom = [self, ...rest.slice(Math.ceil(rest.length / 2))].filter(Boolean);
 
-          {/* You */}
-          <div className="mt-2 flex flex-col items-center gap-2">
-            <div className="h-16 w-12 rounded-md bg-gray-400/50 dark:bg-white/10" />
-            <div className="text-sm font-semibold text-gray-900 dark:text-white">{user?.name}</div>
-          </div>
+            const Seat = ({ name, isSelf, value, dashed }) => (
+              <div className="relative flex flex-col items-center gap-2">
+                <div className="relative">
+                  {isSelf && (
+                    <button
+                      type="button"
+                      className="absolute -top-3 -left-3 grid h-7 w-7 place-items-center rounded-full bg-indigo-500 text-white shadow ring-2 ring-white dark:ring-[#0f1115]"
+                      title="Edit name"
+                      aria-label="Edit name"
+                      onClick={() => window.dispatchEvent(new CustomEvent('spz:edit-name'))}
+                    >
+                      <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M12 20h9" />
+                        <path d="M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4Z" />
+                      </svg>
+                    </button>
+                  )}
+                  <div
+                  className={[
+                    "aspect-[3/4] w-12 rounded-md border",
+                    dashed ? "border-dashed" : "",
+                    isSelf && value
+                      ? "border-2 border-indigo-500 text-indigo-600 grid place-items-center font-extrabold text-lg"
+                      : "border-black/10 bg-gray-200/60 dark:border-white/10 dark:bg-white/10",
+                  ].join(" ")}
+                >
+                  {isSelf && value ? value : null}
+                </div>
+                </div>
+                <div className="text-sm font-semibold text-gray-900 dark:text-white max-w-[120px] truncate">{name || "Guest"}</div>
+              </div>
+            );
+
+            return (
+              <div className="grid w-full max-w-5xl grid-cols-12 items-center gap-4">
+                {/* Top row */}
+                <div className="col-span-12 flex items-center justify-center gap-6">
+                  {top.map((m) => (
+                    <Seat key={m.id} name={m.name} />
+                  ))}
+                </div>
+
+                {/* Middle: left seat + board + right seat */}
+                <div className="col-span-12 grid grid-cols-12 items-center">
+                  <div className="col-span-2 flex justify-center">
+                    {left[0] ? <Seat name={left[0].name} /> : <div className="h-16" />}
+                  </div>
+                  <div className="col-span-8">
+                    <div className="relative w-full rounded-3xl border bg-indigo-50/60 p-10 text-center text-gray-800 shadow-sm dark:border-white/10 dark:bg-white/5 dark:text-white">
+                      <button className="inline-flex items-center justify-center rounded-xl bg-gray-700 px-6 py-3 text-sm font-semibold text-white transition hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-gray-600">
+                        Start new voting
+                      </button>
+                      
+                    </div>
+                  </div>
+                  <div className="col-span-2 flex justify-center">
+                    {right[0] ? <Seat name={right[0].name} dashed /> : <div className="h-16" />}
+                  </div>
+                </div>
+
+                {/* Bottom row (includes self) */}
+                <div className="col-span-12 mt-2 flex items-center justify-center gap-6">
+                  {bottom.map((m) => (
+                    <Seat key={m.id || m.name} name={m.name} isSelf={m.id === selfId} value={m.id === selfId ? selected : undefined} />
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
         </div>
       </div>
 

@@ -4,6 +4,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import RoomShell from "./room-shell";
+import BrandLoader from "../../components/brand-loader";
 
 export default function SessionGate({ sessionId, sessionName }) {
   const [user, setUser] = useState(null);
@@ -12,21 +13,31 @@ export default function SessionGate({ sessionId, sessionName }) {
   const [submitting, setSubmitting] = useState(false);
   const modalRef = useRef(null);
 
-  // Read user from localStorage (if present) and skip modal
+  // Read user from localStorage (if present). If found, silently join this session to ensure presence/auth.
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem("spz_user");
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (parsed && parsed.id && parsed.name) {
-          setUser(parsed);
-          setLoading(false);
-          return;
+    (async () => {
+      try {
+        const raw = localStorage.getItem("spz_user");
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed && parsed.id && parsed.name) {
+            // Silently connect this user to the current session (idempotent)
+            try {
+              await fetch(`/api/session/${encodeURIComponent(sessionId)}/join`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ userId: parsed.id, name: parsed.name }),
+              });
+            } catch {}
+            setUser(parsed);
+            setLoading(false);
+            return;
+          }
         }
-      }
-    } catch (_) {}
-    setLoading(false);
-  }, []);
+      } catch (_) {}
+      setLoading(false);
+    })();
+  }, [sessionId]);
 
   async function handleJoin(e) {
     e.preventDefault();
@@ -52,8 +63,11 @@ export default function SessionGate({ sessionId, sessionName }) {
     }
   }
 
+  // While determining identity, show branded loader
+  if (loading) return <BrandLoader />;
+
   // If user exists (from storage or just joined), render basic room shell
-  if (!loading && user)
+  if (user)
     return (
       <RoomShell
         sessionId={sessionId}
