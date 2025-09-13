@@ -1,5 +1,6 @@
 // app/layout.tsx
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import "./globals.css";
 import { ThemeProvider } from "./components/theme-provider";
 import Analytics from "./components/analytics";
@@ -61,7 +62,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <div className="absolute inset-0 hidden dark:block bg-[radial-gradient(60%_40%_at_50%_0%,rgba(109,93,246,0.35),transparent_70%),radial-gradient(40%_40%_at_100%_60%,rgba(34,197,94,0.25),transparent_70%),linear-gradient(to_bottom,#0B0B10,rgba(11,11,16,0.85))]" />
           </div>
           {children}
-          <Analytics />
+          <Suspense fallback={null}>
+            <Analytics />
+          </Suspense>
         </ThemeProvider>
         </body>
     </html>
