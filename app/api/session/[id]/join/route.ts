@@ -1,9 +1,9 @@
 // File: app/api/sessions/[id]/join/route.ts
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "../../../../../lib/primsa";
 
-export async function POST(_req: Request, ctx: { params: { id: string } }) {
-  const { id } = ctx.params;
+export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  const { id } = await ctx.params;
   try {
     const body = (await _req.json().catch(() => ({} as Record<string, unknown>))) as
       | { name?: unknown }
