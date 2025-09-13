@@ -1,14 +1,12 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { useTheme } from './theme-provider';
 
 export default function UserMenu({ userName = 'Guest user' }: { userName?: string }) {
   const [open, setOpen] = useState(false);
   const [spectator, setSpectator] = useState(false);
   const btnRef = useRef<HTMLButtonElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
-  const { theme, setTheme } = useTheme();
 
   useEffect(() => {
     const onClick = (e: MouseEvent) => {
@@ -151,19 +149,4 @@ export default function UserMenu({ userName = 'Guest user' }: { userName?: strin
   );
 }
 
-function MenuItem({ icon, label, onClick, badge }: { icon: React.ReactNode; label: string; onClick?: () => void; badge?: string }) {
-  return (
-    <li>
-      <button
-        className="flex w-full items-center justify-between gap-3 px-4 py-2 text-left text-gray-700 hover:bg-black/5 hover:text-gray-900 dark:text-white/80 dark:hover:bg-white/5 dark:hover:text-white"
-        onClick={onClick}
-      >
-        <span className="flex items-center gap-3">
-          <span className="grid h-6 w-6 place-items-center text-current">{icon}</span>
-          {label}
-        </span>
-        {badge && <span className="rounded-md bg-blue-500/10 px-1.5 py-0.5 text-xs font-semibold text-blue-500">{badge}</span>}
-      </button>
-    </li>
-  );
-}
+

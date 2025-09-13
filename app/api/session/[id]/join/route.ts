@@ -2,12 +2,16 @@
 import { NextResponse } from "next/server";
 import { prisma } from "../../../../../lib/primsa";
 
-export async function POST(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const { id } = await ctx.params;
+export async function POST(_req: Request, ctx: { params: { id: string } }) {
+  const { id } = ctx.params;
   try {
-    const body = await _req.json().catch(() => ({} as any));
-    const rawName = (body?.name ?? "").toString().trim();
-    const name = rawName || "Guest user";
+    const body = (await _req.json().catch(() => ({} as Record<string, unknown>))) as
+      | { name?: unknown }
+      | Record<string, unknown>;
+    const rawName = (body as { name?: unknown })?.name ?? "";
+    const rawStr = typeof rawName === "string" ? rawName : String(rawName ?? "");
+    const trimmed = rawStr.trim();
+    const name = trimmed || "Guest user";
 
     // Create a guest user with a unique email (since email is required and unique in your schema)
     const email = `guest_${Date.now()}_${Math.random().toString(36).slice(2)}@storypointz.local`;

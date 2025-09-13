@@ -47,7 +47,7 @@ export default function NewGame() {
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
       router.push(`/session/${encodeURIComponent(data.sessionId)}`);
-    } catch (err) {
+    } catch {
       setError("Could not create session. Please try again.");
       setSubmitting(false);
     }
@@ -59,7 +59,7 @@ export default function NewGame() {
       <form onSubmit={onSubmit} className="space-y-6">
         <div className="space-y-2">
           <label htmlFor="sessionName" className="block text-sm font-medium text-gray-800 dark:text-white/90">
-            Session's name
+            Session&apos;s name
           </label>
           <input
             id="sessionName"
