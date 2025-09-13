@@ -53,7 +53,15 @@ export default function SessionGate({ sessionId, sessionName }) {
   }
 
   // If user exists (from storage or just joined), render basic room shell
-  if (!loading && user) return <RoomShell sessionId={sessionId} sessionName={sessionName} user={user} />;
+  if (!loading && user)
+    return (
+      <RoomShell
+        sessionId={sessionId}
+        sessionName={sessionName}
+        user={user}
+        onUserChange={(u) => setUser(u)}
+      />
+    );
 
   // Otherwise show the gate modal asking for name
   return (

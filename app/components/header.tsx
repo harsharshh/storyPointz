@@ -7,7 +7,7 @@ import { useRef } from 'react';
 import { usePathname } from 'next/navigation';
 import UserMenu from './user-menu';
 
-export default function Header() {
+export default function Header({ userName }: { userName?: string } = {}) {
   const logoRef = useRef<HTMLAnchorElement | null>(null);
   const pathname = usePathname();
 
@@ -55,7 +55,7 @@ export default function Header() {
           )}
           {/* User profile menu */}
           {pathname !== '/' && pathname !== '/session/new' && (
-            <UserMenu />
+            <UserMenu userName={userName} />
           )}
         </div>
       </div>
