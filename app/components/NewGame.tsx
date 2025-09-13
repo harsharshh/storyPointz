@@ -39,7 +39,7 @@ export default function NewGame() {
     setSubmitting(true);
     setError(null);
     try {
-      const res = await fetch("/api/sessions", {
+      const res = await fetch("/api/session", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name }),
