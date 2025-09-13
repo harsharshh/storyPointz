@@ -46,7 +46,7 @@ export default function NewGame() {
       });
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
-      router.push(`/session/${data.sessionId}`);
+      router.push(`/session/${encodeURIComponent(data.sessionId)}`);
     } catch (err) {
       setError("Could not create session. Please try again.");
       setSubmitting(false);
