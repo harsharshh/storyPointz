@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState, useRef } from "react";
 import gsap from "gsap";
 import Header from "../../components/header";
 import FloatingNumbers from "../../components/floating-numbers";
+import ConfettiBurst from "../../components/confetti-burst";
 import { useTheme } from "../../components/theme-provider";
 
 export default function RoomShell({ sessionId, sessionName, user, enableFloatNumbers = true }) {
@@ -37,8 +38,12 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
   const [members, setMembers] = useState([]);
   const [votes, setVotes] = useState({});
   const [revealed, setRevealed] = useState(false);
+  const [revealTick, setRevealTick] = useState(0);
   const revealedRef = useRef(false);
   useEffect(() => { revealedRef.current = revealed; }, [revealed]);
+  useEffect(() => {
+    if (revealed) setRevealTick((v) => v + 1);
+  }, [revealed]);
   const [activeStoryId, setActiveStoryId] = useState(null);
   const activeStoryRef = useRef(null);
   const boardRef = useRef(null);
@@ -567,6 +572,9 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
                         className="z-10"
                       />
                     )}
+
+                    {/* Confetti when revealed */}
+                    <ConfettiBurst trigger={revealTick} options={{ count: 48 }} />
 
                     {noVotesYet ? (
                       <div className="relative z-10 flex items-center justify-center">
