@@ -494,6 +494,8 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
                         count={18}
                         isDark={isDark}
                         gradFor={gradFor}
+                        animationType="parallax"
+                        speed={revealed ? 'fast' : 'slow'}
                         className="z-10"
                       />
                     )}
