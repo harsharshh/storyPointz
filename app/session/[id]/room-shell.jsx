@@ -345,8 +345,10 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
     const tl = gsap.timeline({
       defaults: { ease: 'power2.out' },
       onComplete: async () => {
+        // Immediately mark as revealed locally so the button swaps to "Vote again"
+        setRevealed(true);
         setCountdown(0);
-        await revealAll();
+        await revealAll(); // notify server/peers
       },
     });
 
@@ -732,9 +734,43 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
                           <span className="absolute inset-0 rounded-2xl bg-gradient-to-br from-indigo-500 via-cyan-400 to-emerald-400 opacity-90 [mask:linear-gradient(#000_0_0)_content-box,linear-gradient(#000_0_0)] [mask-composite:exclude] p-[2px]" />
                           <span className="relative">
                             <span className="inline-flex items-center gap-2">
-                              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                                <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z" />
-                                <path d="M15 12l-3 3-3-3" />
+                              <svg
+                                viewBox="0 0 48 48"
+                                className="h-4 w-4"
+                                fill="none"
+                                aria-hidden
+                              >
+                                {/* Dark arc (top‑left), navy */}
+                                <path
+                                  d="M6 28a18 18 0 0 1 28-12"
+                                  stroke="#f8f8f8ff"
+                                  strokeWidth="6"
+                                  strokeLinecap="round"
+                                />
+                                {/* Dark arrowhead */}
+                                <path
+                                  d="M6 28 l-5 -0.5 l3.2 3.2"
+                                  fill="#ffffffff"
+                                  stroke="#ffffffff"
+                                  strokeWidth="2"
+                                  strokeLinejoin="round"
+                                />
+
+                                {/* Light arc (bottom‑right), gray */}
+                                <path
+                                  d="M42 20a18 18 0 0 1-28 12"
+                                  stroke="#ffffffff"
+                                  strokeWidth="6"
+                                  strokeLinecap="round"
+                                />
+                                {/* Light arrowhead */}
+                                <path
+                                  d="M42 20 l3.6 3.6 l-5.2 0.6"
+                                  fill="#ffffffff"
+                                  stroke="#ffffffff"
+                                  strokeWidth="2"
+                                  strokeLinejoin="round"
+                                />
                               </svg>
                               <span>Vote again</span>
                             </span>
