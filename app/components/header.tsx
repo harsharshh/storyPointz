@@ -69,7 +69,7 @@ export default function Header({ userName, sessionName, sessionId }: { userName?
           {pathname !== '/' && pathname !== '/session/new' && sessionName && (
             <span
               title={sessionName}
-              className="hidden sm:inline-flex max-w-[50vw] items-center truncate rounded-full px-4 py-1.5 text-sm font-semibold text-white shadow-sm ring-1 ring-indigo-500/30 bg-gradient-to-r from-indigo-600 via-emerald-500 to-indigo-600 backdrop-blur dark:from-indigo-500 dark:via-emerald-400 dark:to-indigo-500"
+              className="hidden sm:inline-flex max-w-[50vw] items-center truncate rounded-full px-4 py-1.5 text-sm font-semibold text-white shadow-sm ring-1 ring-indigo-500/30 bg-gradient-to-r from-indigo-600 via-indigo-500 to-indigo-600 backdrop-blur dark:from-indigo-500 dark:via-indigo-400 dark:to-indigo-500"
             >
               {sessionName}
             </span>

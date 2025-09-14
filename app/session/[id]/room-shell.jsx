@@ -10,6 +10,7 @@ export default function RoomShell({ sessionId, sessionName, user }) {
   const [members, setMembers] = useState([]);
   const [votes, setVotes] = useState({});
   const [revealed, setRevealed] = useState(false);
+  const [activeStoryId, setActiveStoryId] = useState(null);
 
   useEffect(() => {
     if (!copied) return;
@@ -78,6 +79,18 @@ export default function RoomShell({ sessionId, sessionName, user }) {
     };
   }, [user?.id, user?.name, sessionId, pusherKey, pusherCluster]);
 
+  // active story wiring
+  useEffect(() => {
+    const key = `spz_active_story_${sessionId}`;
+    try { const v = localStorage.getItem(key); if (v) setActiveStoryId(v); } catch {}
+    const onActive = (e) => {
+      const d = e?.detail || {};
+      if (d.sessionId === sessionId) setActiveStoryId(d.storyId || null);
+    };
+    window.addEventListener('spz:active-story', onActive);
+    return () => window.removeEventListener('spz:active-story', onActive);
+  }, [sessionId]);
+
   async function revealAll() {
     try {
       await fetch(`/api/session/${encodeURIComponent(sessionId)}/reveal`, {
@@ -85,6 +98,13 @@ export default function RoomShell({ sessionId, sessionName, user }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId: user?.id }),
       });
+      // persist votes to active story if present
+      if (activeStoryId) {
+        const payload = { storyId: activeStoryId, votes: Object.entries(votes).map(([uid,val]) => ({ userId: uid, value: val })) };
+        await fetch(`/api/session/${encodeURIComponent(sessionId)}/reveal-save`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+        });
+      }
     } catch {}
   }
 
@@ -225,7 +245,7 @@ export default function RoomShell({ sessionId, sessionName, user }) {
                         await fetch(`/api/session/${encodeURIComponent(sessionId)}/vote`, {
                           method: "POST",
                           headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify({ userId: user?.id, value: v }),
+                          body: JSON.stringify({ userId: user?.id, value: v, storyId: activeStoryId }),
                         });
                       } catch {}
                     }}

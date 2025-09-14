@@ -6,10 +6,20 @@ export const runtime = "nodejs";
 export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params;
   try {
-    const stories = await prisma.story.findMany({
+    const rows = await prisma.story.findMany({
       where: { sessionId: id },
       orderBy: { id: 'asc' },
-      select: { id: true, key: true, title: true },
+      select: { id: true, key: true, title: true, votes: { select: { value: true } } },
+    });
+    const stories = rows.map((s) => {
+      const nums = (s.votes || [])
+        .map((v) => {
+          const n = parseFloat(v.value);
+          return Number.isFinite(n) ? n : null;
+        })
+        .filter((n): n is number => n !== null);
+      const avg = nums.length ? Number((nums.reduce((a, b) => a + b, 0) / nums.length).toFixed(2)) : null;
+      return { id: s.id, key: s.key, title: s.title, avg };
     });
     return NextResponse.json({ stories });
   } catch (e) {
@@ -31,7 +41,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       },
       select: { id: true, key: true, title: true },
     });
-    return NextResponse.json({ story });
+    return NextResponse.json({ story: { ...story, avg: null } });
   } catch (e) {
     console.error("create story failed", e);
     return NextResponse.json({ error: "Failed to create story" }, { status: 500 });
@@ -53,7 +63,7 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ id: string 
       data: { title: (title || "Untitled").toString().trim() || "Untitled" },
       select: { id: true, key: true, title: true },
     });
-    return NextResponse.json({ story: updated });
+    return NextResponse.json({ story: { ...updated, avg: null } });
   } catch (e) {
     console.error("update story failed", e);
     return NextResponse.json({ error: "Failed to update story" }, { status: 500 });

@@ -52,14 +52,15 @@ export default function StoriesDrawer({ open, onClose, sessionId }: StoriesDrawe
 }
 
 // very small in-memory cache for session stories
-const storiesCache = new Map<string, Array<{ id: string; key: string; title: string }>>();
+const storiesCache = new Map<string, Array<{ id: string; key: string; title: string; avg?: number | null }>>();
 
-function StoriesList({ sessionId, initial }: { sessionId?: string; initial: Array<{ id: string; key: string; title: string }>}){
+function StoriesList({ sessionId, initial }: { sessionId?: string; initial: Array<{ id: string; key: string; title: string; avg?: number|null }>}){
   const [stories, setStories] = React.useState(initial);
   const [adding, setAdding] = React.useState(false);
   const [draft, setDraft] = React.useState("");
   const [saving, setSaving] = React.useState(false);
   const [loading, setLoading] = React.useState(false);
+  const [activeId, setActiveId] = React.useState<string | null>(null);
 
   // seed from cache instantly, then fetch fresh
   React.useEffect(() => {
@@ -80,6 +81,28 @@ function StoriesList({ sessionId, initial }: { sessionId?: string; initial: Arra
     })();
   }, [sessionId]);
 
+  // initialize active story from localStorage or single-story auto activate
+  React.useEffect(() => {
+    if (!sessionId) return;
+    const key = `spz_active_story_${sessionId}`;
+    const stored = typeof window !== 'undefined' ? localStorage.getItem(key) : null;
+    if (stored) {
+      setActiveId(stored);
+    } else if (stories.length === 1) {
+      setActiveId(stories[0].id);
+      try { localStorage.setItem(key, stories[0].id); } catch {}
+      window.dispatchEvent(new CustomEvent('spz:active-story', { detail: { sessionId, storyId: stories[0].id } }));
+    }
+  }, [sessionId, stories]);
+
+  function selectActive(id: string){
+    if (!sessionId) return;
+    setActiveId(id);
+    const key = `spz_active_story_${sessionId}`;
+    try { localStorage.setItem(key, id); } catch {}
+    window.dispatchEvent(new CustomEvent('spz:active-story', { detail: { sessionId, storyId: id } }));
+  }
+
   return (
     <div className="space-y-3">
       {stories.length === 0 ? (
@@ -92,6 +115,8 @@ function StoriesList({ sessionId, initial }: { sessionId?: string; initial: Arra
             sessionId={sessionId}
             onUpdated={(ns) => setStories((prev)=> prev.map(p=> p.id===ns.id? ns : p))}
             onDeleted={(id) => setStories((prev)=> prev.filter(p=> p.id !== id))}
+            isActive={activeId === s.id}
+            onSelectActive={() => selectActive(s.id)}
           />
         ))
       )}
@@ -103,7 +128,7 @@ function StoriesList({ sessionId, initial }: { sessionId?: string; initial: Arra
         </div>
       )}
       {!adding ? (
-        <button onClick={() => setAdding(true)} className="cursor-pointer mt-2 inline-flex w-full items-center justify-start gap-2 rounded-2xl border border-black/10 bg-white/70 px-4 py-3 text-sm font-semibold text-gray-900 backdrop-blur hover:bg-white/90 dark:border-white/10 dark:bg-white/10 dark:text-white">
+        <button onClick={() => setAdding(true)} className="cursor-pointer mt-2 inline-flex w-full items-center justify-start gap-2 rounded-2xl border border-black/10 bg-white/70 px-4 py-3 text-sm font-semibold text-gray-900 backdrop-blur hover:bg-white/90 dark:border-white/10 dark:bg-white/10 dark:text-white ">
           <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
           Add another story
         </button>
@@ -157,7 +182,7 @@ function StoriesList({ sessionId, initial }: { sessionId?: string; initial: Arra
   );
 }
 
-function StoryCard({ story, sessionId, onUpdated, onDeleted }:{ story:{ id:string; key:string; title:string }, sessionId?: string, onUpdated:(s:{id:string;key:string;title:string})=>void, onDeleted:(id:string)=>void}){
+function StoryCard({ story, sessionId, onUpdated, onDeleted, isActive, onSelectActive }:{ story:{ id:string; key:string; title:string, avg?: number }, sessionId?: string, onUpdated:(s:{id:string;key:string;title:string})=>void, onDeleted:(id:string)=>void, isActive?: boolean, onSelectActive?: ()=>void}){
   const [menu, setMenu] = React.useState(false);
   const [editing, setEditing] = React.useState(false);
   const [draft, setDraft] = React.useState(story.title);
@@ -200,9 +225,19 @@ function StoryCard({ story, sessionId, onUpdated, onDeleted }:{ story:{ id:strin
         <>
           <div className="mb-3 text-sm">{story.title}</div>
           <div className="flex items-center justify-between">
-            
-            <button className="cursor-pointer rounded-xl bg-gray-500 px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-gray-500">Vote this story</button>
-            <button className="cursor-pointer inline-grid h-8 w-8 place-items-center rounded-lg border border-black/10 text-gray-700 hover:bg-black/5 dark:border-white/10 dark:text-white/80 dark:hover:bg-white/10">-</button>
+            {isActive ? (
+              <button className="cursor-pointer rounded-xl bg-indigo-600 px-4 py-2 text-sm font-extrabold text-white shadow-sm ring-1 ring-indigo-500/30 dark:bg-indigo-500">{typeof story.avg === 'number' ? 'Vote done' : 'Voting now...'}</button>
+            ) : (
+              <button onClick={onSelectActive} className="cursor-pointer rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-indigo-500">
+                {typeof story.avg === 'number' ? 'Vote again' : 'Vote this story'}
+              </button>
+            )}
+            <div className="flex items-center gap-2">
+              {typeof story.avg === 'number' && (
+                <button className="cursor-pointer inline-grid h-8 w-8 place-items-center rounded-lg border border-black/10 text-gray-700 hover:bg-black/5 dark:border-white/10 dark:text-white/80 dark:hover:bg-white/10">{story.avg || '-'}</button>
+              )}
+              
+            </div>
           </div>
         </>
       ) : (
