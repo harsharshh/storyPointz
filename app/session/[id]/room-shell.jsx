@@ -12,6 +12,8 @@ export default function RoomShell({ sessionId, sessionName, user }) {
   const quickLift = useRef({});
   const lastSelected = useRef(null);
   const [selected, setSelected] = useState(null);
+  const selectedRef = useRef(null);
+  useEffect(() => { selectedRef.current = selected; }, [selected]);
   useEffect(() => {
     // create smooth, fast tweeners per card using gsap.quickTo
     values.forEach((v) => {
@@ -29,13 +31,19 @@ export default function RoomShell({ sessionId, sessionName, user }) {
   const [members, setMembers] = useState([]);
   const [votes, setVotes] = useState({});
   const [revealed, setRevealed] = useState(false);
+  const revealedRef = useRef(false);
+  useEffect(() => { revealedRef.current = revealed; }, [revealed]);
   const [activeStoryId, setActiveStoryId] = useState(null);
+  const activeStoryRef = useRef(null);
+  useEffect(() => { activeStoryRef.current = activeStoryId; }, [activeStoryId]);
 
   useEffect(() => {
     if (!copied) return;
     const t = setTimeout(() => setCopied(false), 1400);
     return () => clearTimeout(t);
   }, [copied]);
+
+  // Mask overlays are static; no animation needed
 
   async function copyInviteLink() {
     try {
@@ -70,15 +78,53 @@ export default function RoomShell({ sessionId, sessionName, user }) {
         const list = [];
         channel.members.each((m) => list.push({ id: m.id, name: m.info?.name }));
         setMembers(list);
+        // Ask others for current state (e.g., revealed) using client events
+        try { channel.trigger && channel.trigger('client-sync-request', { from: user.id }); } catch {}
+        // Clear any stale vote for myself across peers (e.g., after refresh)
+        try { channel.trigger && channel.trigger('client-clear-my-vote', { userId: user.id }); } catch {}
       });
       channel.bind("pusher:member_added", (m) => {
         setMembers((prev) => {
           if (prev.find((x) => x.id === m.id)) return prev;
           return [...prev, { id: m.id, name: m.info?.name }];
         });
+        // When a new member joins, if we already voted (in this round), re-broadcast our vote
+        // so the newcomer immediately sees vote status without waiting for future events.
+        const val = selectedRef.current;
+        const isRevealedNow = revealedRef.current;
+        if (val && !isRevealedNow) {
+          (async () => {
+            try {
+              await fetch(`/api/session/${encodeURIComponent(sessionId)}/vote`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ userId: user?.id, value: val, storyId: activeStoryRef.current }),
+              });
+            } catch {}
+          })();
+        }
+      });
+      // If someone asks for sync, and we've already revealed, notify them to reveal
+      channel.bind('client-sync-request', (payload) => {
+        try {
+          if (revealedRef.current) {
+            channel.trigger && channel.trigger('client-reveal-now', { by: user.id });
+          }
+        } catch {}
+      });
+      // Newcomers listen for reveal-now and update state
+      channel.bind('client-reveal-now', () => {
+        setRevealed(true);
+      });
+      // When a peer refreshes/joins and asks to clear their prior vote, remove it from our local state
+      channel.bind('client-clear-my-vote', (payload) => {
+        const uid = payload?.userId;
+        if (!uid) return;
+        setVotes((prev) => { const n = { ...prev }; delete n[uid]; return n; });
       });
       channel.bind("pusher:member_removed", (m) => {
         setMembers((prev) => prev.filter((x) => x.id !== m.id));
+        setVotes((prev) => { const n = { ...prev }; delete n[m.id]; return n; });
       });
       channel.bind("user-joined", (payload) => {
         // Optional extra join animation hook
@@ -148,6 +194,55 @@ export default function RoomShell({ sessionId, sessionName, user }) {
     return coolWarmPairs[idx] || coolWarmPairs[coolWarmPairs.length - 1];
   };
 
+  // Stable, colorful avatar gradient per user
+  const userGradFor = (key) => {
+    const str = String(key || "guest");
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) hash = (hash * 31 + str.charCodeAt(i)) >>> 0;
+    const idx = hash % coolWarmPairs.length;
+    return coolWarmPairs[idx];
+  };
+
+  // --- Randomized woven texture per card (stable per user) ---
+  const seededRng = (seedKey) => {
+    const s = String(seedKey || "seed");
+    let h = 2166136261;
+    for (let i = 0; i < s.length; i++) h = (h ^ s.charCodeAt(i)) * 16777619 >>> 0;
+    return () => (h = (h * 1664525 + 1013904223) >>> 0) / 0xffffffff;
+  };
+
+  const textureStyleFor = (key) => {
+    const rnd = seededRng(key);
+    // Randomized base hues (cool to warm across full wheel)
+    const h1 = Math.floor(rnd() * 360);
+    const h2 = (h1 + 20 + Math.floor(rnd() * 80)) % 360;
+    const c1 = `hsl(${h1} 85% 55%)`;
+    const c2 = `hsl(${h2} 85% 45%)`;
+
+    // Tile size & soft highlights vary slightly per card
+    const size = 56 + Math.floor(rnd() * 10); // 56–66px
+    const lightA = 0.18 + rnd() * 0.08; // brightness of light facets
+    const darkA = 0.18 + rnd() * 0.10; // depth of dark facets
+
+    return {
+      // Argyle/diamond facets: two diagonals + inverse layers + base gradient
+      backgroundImage: `
+        linear-gradient(45deg, rgba(255,255,255,${lightA}) 25%, transparent 25%),
+        linear-gradient(-45deg, rgba(255,255,255,${lightA}) 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, rgba(0,0,0,${darkA}) 75%),
+        linear-gradient(-45deg, transparent 75%, rgba(0,0,0,${darkA}) 75%),
+        linear-gradient(135deg, ${c1}, ${c2})
+      `,
+      backgroundSize: `${size}px ${size}px, ${size}px ${size}px, ${size}px ${size}px, ${size}px ${size}px, 100% 100%`,
+      backgroundPosition: `0 0, 0 0, 0 0, 0 0, 50% 50%`,
+      backgroundBlendMode: 'overlay, overlay, multiply, multiply, normal',
+      WebkitBorderRadius: '0.75rem',
+      borderRadius: '0.75rem',
+      filter: 'saturate(1.05) contrast(1.06)',
+      opacity: 0.98,
+    };
+  };
+
   return (
     <div className="relative h-[100dvh] overflow-hidden overscroll-none">
       <Header userName={user?.name} sessionName={sessionName} sessionId={sessionId} />
@@ -180,19 +275,88 @@ export default function RoomShell({ sessionId, sessionName, user }) {
             const bottom = [self, ...rest.slice(Math.ceil(rest.length / 2))].filter(Boolean);
 
             const Seat = ({ id, name, isSelf, dashed }) => {
-              const hasVoted = Boolean(votes[id]);
-              const shown = isSelf ? selected : revealed ? votes[id] : null;
+              const votedVal = votes[id];
+              const hasVoted = Boolean(votedVal);
+              const isRevealed = revealed;
+              const selfShown = isSelf ? selected : null;
+              const valueToShow = isRevealed ? votedVal : selfShown;
+
+              const renderGlyph = (v) => {
+                if (!v) return null;
+                const isCoffee = v === "☕";
+                const isUnknown = v === "?";
+                const [g1, g2] = gradFor(v);
+                return isCoffee ? (
+                  <svg viewBox="0 0 64 64" className="h-6 w-6" aria-hidden>
+                    <defs>
+                      <linearGradient id={`seat_mug_${id}`} x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" stopColor={g1} />
+                        <stop offset="100%" stopColor={g2} />
+                      </linearGradient>
+                    </defs>
+                    <g fill={`url(#seat_mug_${id})`}>
+                      <rect x="12" y="26" rx="4" ry="4" width="28" height="18" />
+                      <path d="M42 30h6a6 6 0 0 1 0 12h-6v-4h6a2 2 0 0 0 0-4h-6z" />
+                    </g>
+                    <g stroke={`url(#seat_mug_${id})`} strokeWidth="2" fill="none">
+                      <path d="M22 18c0 3-3 3-3 6 0 2 2 3 2 5" />
+                      <path d="M28 18c0 3-3 3-3 6 0 2 2 3 2 5" />
+                    </g>
+                  </svg>
+                ) : (
+                  <span
+                    className="text-[16px] font-extrabold leading-none bg-clip-text text-transparent"
+                    style={{ backgroundImage: `linear-gradient(135deg, ${gradFor(v)[0]}, ${gradFor(v)[1]})` }}
+                  >
+                    {isUnknown ? '?' : v}
+                  </span>
+                );
+              };
+
+              const renderAvatar = () => {
+                const key = id || name || "guest";
+                const [g1, g2] = userGradFor(key);
+                const gradId = `seat_av_${(id || name || 'g').toString().replace(/[^a-zA-Z0-9_-]/g,'')}`;
+                return (
+                  <svg viewBox="0 0 40 40" className="h-6 w-6" aria-hidden>
+                    <defs>
+                      <linearGradient id={gradId} x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" stopColor={g1} />
+                        <stop offset="100%" stopColor={g2} />
+                      </linearGradient>
+                    </defs>
+                    <circle cx="20" cy="20" r="18" fill={`url(#${gradId})`} />
+                    <g fill="#fff">
+                      <circle cx="20" cy="16" r="6" />
+                      <path d="M8 32c3-6 9-8 12-8s9 2 12 8" fillOpacity=".9" />
+                    </g>
+                  </svg>
+                );
+              };
+
+              // base card appearance similar to bottom rail
+              const baseCard = [
+                "relative z-10 grid place-items-center aspect-[3/4] w-12 select-none rounded-xl border-2 bg-white text-sm font-semibold shadow-sm overflow-hidden transition dark:bg-gray-900",
+              ].join(" ");
+
+              const isMasked = !isSelf && hasVoted && !isRevealed;
+              const borderClass = isMasked
+                ? "border-transparent"
+                : valueToShow || hasVoted
+                  ? "border-indigo-600"
+                  : "border-black/10 dark:border-white/10";
+
               return (
                 <div className="relative flex flex-col items-center gap-2">
-                  <div className="relative">
-                    {isSelf && (
+                  <div className="relative isolate">
+                    {isSelf && selected && (
                       <button
                         type="button"
-                        className="absolute -top-3 -left-3 grid h-7 w-7 place-items-center rounded-full bg-indigo-500 text-white shadow ring-2 ring-white dark:ring-[#0f1115]"
-                        title="Edit name"
-                        aria-label="Edit name"
-                        onClick={() => window.dispatchEvent(new CustomEvent('spz:edit-name'))}
-                      >
+                        className="absolute -top-3 -left-3 z-40 grid h-7 w-7 place-items-center rounded-full bg-indigo-500 text-white shadow ring-2 ring-white will-change-transform dark:ring-[#0f1115]"
+                         title="Edit name"
+                         aria-label="Edit name"
+                         onClick={() => window.dispatchEvent(new CustomEvent('spz:edit-name'))}
+                       >
                         <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                           <path d="M12 20h9" />
                           <path d="M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4Z" />
@@ -200,26 +364,31 @@ export default function RoomShell({ sessionId, sessionName, user }) {
                       </button>
                     )}
                     <div
-                      className={[
-                        "aspect-[3/4] w-12 rounded-md border",
-                        dashed ? "border-dashed" : "",
-                        shown
-                          ? "border-2 border-indigo-500 text-indigo-600 grid place-items-center font-extrabold text-lg"
-                          : hasVoted
-                          ? "border-2 border-indigo-500/70 bg-indigo-500/10 grid place-items-center"
-                          : "border-black/10 bg-gray-200/60 dark:border-white/10 dark:bg-white/10",
-                      ].join(" ")}
-                      onClick={() => { if (!revealed) revealAll(); }}
+                      className={[baseCard, borderClass].join(" ")}
                     >
-                      {shown || (hasVoted ? (
-                        <svg viewBox="0 0 24 24" className="h-5 w-5 text-indigo-600 dark:text-indigo-400" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                          <circle cx="12" cy="12" r="3" />
-                        </svg>
-                      ) : null)}
+                      {/* Empty state when no vote */}
+                      {!valueToShow && !hasVoted && (
+                        renderAvatar()
+                      )}
+
+                      {/* Shown value for self or after reveal */}
+                      {valueToShow && (
+                        <div className="pointer-events-none">
+                          {renderGlyph(valueToShow)}
+                        </div>
+                      )}
+
+                      {/* Other users: mask their value until reveal */}
+                      {!isSelf && hasVoted && !isRevealed && (
+                        <div
+                          className="absolute inset-0 z-20 rounded-xl cursor-default"
+                          style={textureStyleFor(id)}
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                      )}
                     </div>
                   </div>
-                  <div className="text-sm font-semibold text-gray-900 dark:text-white max-w-[120px] truncate">{name || "Guest"}</div>
+                  <div className="max-w-[120px] truncate text-sm font-semibold text-gray-900 dark:text-white">{name || "Guest"}</div>
                 </div>
               );
             };
@@ -251,7 +420,7 @@ export default function RoomShell({ sessionId, sessionName, user }) {
                     </div>
                   </div>
                   <div className="col-span-2 flex justify-center">
-                    {right[0] ? <Seat id={right[0].id} name={right[0].name} dashed /> : <div className="h-16" />}
+                    {right[0] ? <Seat id={right[0].id} name={right[0].name} /> : <div className="h-16" />}
                   </div>
                 </div>
 

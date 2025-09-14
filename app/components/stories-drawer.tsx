@@ -234,8 +234,10 @@ function StoryCard({ story, sessionId, onUpdated, onDeleted, isActive, onSelectA
               </button>
             )}
             <div className="flex items-center gap-2">
-              {typeof story.avg === 'number' && (
+              {typeof story.avg === 'number'? (
                 <button className="cursor-pointer inline-grid h-8 w-8 place-items-center rounded-lg border border-black/10 text-gray-700 hover:bg-black/5 dark:border-white/10 dark:text-white/80 dark:hover:bg-white/10">{story.avg || '-'}</button>
+              ): (
+                <button className="cursor-pointer inline-grid h-8 w-8 place-items-center rounded-lg border border-black/10 text-gray-700 hover:bg-black/5 dark:border-white/10 dark:text-white/80 dark:hover:bg-white/10">{'-'}</button>
               )}
               
             </div>
