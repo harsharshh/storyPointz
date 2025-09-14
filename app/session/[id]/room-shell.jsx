@@ -9,6 +9,7 @@ export default function RoomShell({ sessionId, sessionName, user }) {
   const values = ["0", "1", "2", "3", "5", "8", "13", "21", "34", "55", "89", "?", "☕"];
   // GSAP card button refs
   const cardRefs = useRef({});
+  const channelRef = useRef(null);
   const quickLift = useRef({});
   const lastSelected = useRef(null);
   const [selected, setSelected] = useState(null);
@@ -74,6 +75,8 @@ export default function RoomShell({ sessionId, sessionName, user }) {
         },
       });
       channel = pusher.subscribe(`presence-session-${sessionId}`);
+      // expose channel for client-trigger events elsewhere (e.g., deselect)
+      try { channelRef.current = channel; } catch {}
       channel.bind("pusher:subscription_succeeded", () => {
         const list = [];
         channel.members.each((m) => list.push({ id: m.id, name: m.info?.name }));
@@ -141,6 +144,7 @@ export default function RoomShell({ sessionId, sessionName, user }) {
     return () => {
       try { channel && pusher?.unsubscribe?.(`presence-session-${sessionId}`); } catch {}
       try { pusher?.disconnect?.(); } catch {}
+      try { channelRef.current = null; } catch {}
     };
   }, [user?.id, user?.name, sessionId, pusherKey, pusherCluster]);
 
@@ -453,13 +457,38 @@ export default function RoomShell({ sessionId, sessionName, user }) {
                     ref={(el) => { if (el) cardRefs.current[v] = el; }}
                     onMouseEnter={() => {
                       const qt = quickLift.current[v];
-                      if (qt && (!selected || selected !== v)) qt(-10);
+                      if (qt && (!selected || selected !== v)) qt(-6);
                     }}
                     onMouseLeave={() => {
                       const qt = quickLift.current[v];
                       if (qt && (!selected || selected !== v)) qt(0);
                     }}
                     onClick={async () => {
+                      // Prevent toggling after reveal
+                      if (revealedRef.current) return;
+                      const wasSelected = selected === v;
+
+                      // If clicking the same selected card -> deselect
+                      if (wasSelected) {
+                        // Lower current card
+                        const curQt = quickLift.current[v];
+                        if (curQt) curQt(0);
+                        lastSelected.current = null;
+                        setSelected(null);
+                        // Clear own vote locally and notify peers
+                        setVotes((prev) => { const n = { ...prev }; if (user?.id) delete n[user.id]; return n; });
+                        try { channelRef.current?.trigger?.('client-clear-my-vote', { userId: user?.id }); } catch {}
+                        // Fallback broadcast via server event so all clients (even without client-event handlers) update
+                        try {
+                          await fetch(`/api/session/${encodeURIComponent(sessionId)}/vote`, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ userId: user?.id, value: "", storyId: activeStoryId }),
+                          });
+                        } catch {}
+                        return;
+                      }
+
                       // Lower previously selected card if different
                       const prev = lastSelected.current;
                       if (prev && prev !== v) {
@@ -467,11 +496,11 @@ export default function RoomShell({ sessionId, sessionName, user }) {
                         if (prevQt) prevQt(0);
                       }
 
-                      // Mark new selection and lift it
+                      // Select and lift the new card
                       setSelected(v);
                       lastSelected.current = v;
                       const qt = quickLift.current[v];
-                      if (qt) qt(-18);
+                      if (qt) qt(-10);
 
                       try {
                         await fetch(`/api/session/${encodeURIComponent(sessionId)}/vote`, {
