@@ -835,7 +835,7 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
       {/* Bottom area: cards for players, banner for spectators */}
       {isSelfSpectator ? (
         <div className="pointer-events-auto fixed inset-x-0 bottom-0 z-30">
-          <div className="mx-auto max-w-6xl px-6 pb-6">
+          <div className="mx-auto max-w-2xl px-6 pb-6">
             <div className="flex items-center justify-between gap-4 rounded-2xl border border-black/10 bg-white/80 p-4 shadow-sm backdrop-blur-md dark:border-white/10 dark:bg-white/5">
               <div className="flex items-center gap-3">
                 {/* Animated eye */}
