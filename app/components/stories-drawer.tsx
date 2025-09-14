@@ -9,7 +9,7 @@ type StoriesDrawerProps = {
 };
 
 export default function StoriesDrawer({ open, onClose, sessionId }: StoriesDrawerProps) {
-  const [stories, setStories] = React.useState<Array<{ id: string; key: string; title: string }>>([]);
+  const [stories, setStories] = React.useState<Array<{ id: string; key: string; title: string; avg?: number|null }>>([]);
   React.useEffect(() => {
     if (!open || !sessionId) return;
     (async () => {
@@ -23,14 +23,16 @@ export default function StoriesDrawer({ open, onClose, sessionId }: StoriesDrawe
       }
     })();
   }, [open, sessionId]);
-  if (!open) return null;
-
   return (
-    <div className="fixed inset-0 z-[70]">
-      
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
-      <aside className="absolute right-0 top-0 z-[71] h-full w-[92vw] max-w-md overflow-y-auto border-l border-black/10 bg-gradient-to-br from-indigo-100 via-emerald-50 to-white p-4 shadow-2xl dark:border-white/10 
-      dark:bg-[radial-gradient(60%_40%_at_50%_0%,rgba(109,93,246,0.35),transparent_70%),radial-gradient(40%_40%_at_100%_60%,rgba(34,197,94,0.25),transparent_70%),linear-gradient(to_bottom,#0B0B10,rgba(11,11,16,0.85))]">
+    <aside
+      className={[
+        "fixed right-0 top-0 z-[61] h-full w-[92vw] max-w-md overflow-y-auto border-l border-black/10 p-4 shadow-2xl transition-transform duration-300",
+        "bg-gradient-to-br from-indigo-100 via-emerald-50 to-white dark:border-white/10",
+        "dark:bg-[radial-gradient(60%_40%_at_50%_0%,rgba(109,93,246,0.35),transparent_70%),radial-gradient(40%_40%_at_100%_60%,rgba(34,197,94,0.25),transparent_70%),linear-gradient(to_bottom,#0B0B10,rgba(11,11,16,0.85))]",
+        open ? "translate-x-0" : "translate-x-full"
+      ].join(' ')}
+      aria-hidden={!open}
+    >
         <div className="mb-4 flex items-center justify-between">
           <div>
             <h3 className="text-xl font-extrabold text-gray-900 dark:text-white">Stories</h3>
@@ -38,7 +40,7 @@ export default function StoriesDrawer({ open, onClose, sessionId }: StoriesDrawe
           </div>
           <div className="flex items-center gap-2">
             
-            <button className="cursor-pointer  inline-grid h-9 w-9 place-items-center rounded-lg border border-black/10 text-gray-700 dark:border-white/10 dark:text-white" aria-label="Close" onClick={onClose}>
+            <button className="cursor-pointer inline-grid h-9 w-9 place-items-center rounded-lg border border-black/10 text-gray-700 dark:border-white/10 dark:text-white" aria-label="Close" onClick={onClose}>
               <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
             </button>
           </div>
@@ -46,8 +48,7 @@ export default function StoriesDrawer({ open, onClose, sessionId }: StoriesDrawe
 
         {/* Stories list */}
         <StoriesList sessionId={sessionId} initial={stories} />
-      </aside>
-    </div>
+    </aside>
   );
 }
 
@@ -182,7 +183,7 @@ function StoriesList({ sessionId, initial }: { sessionId?: string; initial: Arra
   );
 }
 
-function StoryCard({ story, sessionId, onUpdated, onDeleted, isActive, onSelectActive }:{ story:{ id:string; key:string; title:string, avg?: number }, sessionId?: string, onUpdated:(s:{id:string;key:string;title:string})=>void, onDeleted:(id:string)=>void, isActive?: boolean, onSelectActive?: ()=>void}){
+function StoryCard({ story, sessionId, onUpdated, onDeleted, isActive, onSelectActive }:{ story:{ id:string; key:string; title:string, avg?: number | null }, sessionId?: string, onUpdated:(s:{id:string;key:string;title:string;avg?: number | null})=>void, onDeleted:(id:string)=>void, isActive?: boolean, onSelectActive?: ()=>void}){
   const [menu, setMenu] = React.useState(false);
   const [editing, setEditing] = React.useState(false);
   const [draft, setDraft] = React.useState(story.title);
