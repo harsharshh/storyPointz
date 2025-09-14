@@ -48,7 +48,7 @@ export default function Hero() {
           </h1>
 
           <p data-anim="hero-item" className="mt-5 max-w-prose text-base text-gray-600 dark:text-white/80">
-            Plan poker made easy—private votes, instant reveal, quick consensus.
+            Planning poker made easy, private votes, instant reveal, quick consensus.
           </p>
 
           <div data-anim="hero-item" className="mt-8 flex flex-col gap-3 sm:flex-row">

@@ -257,10 +257,29 @@ export default function RoomShell({ sessionId, sessionName, user }) {
           {/* Invite helper (hide when more than one participant) */}
           {members.length <= 1 && (
             <div className="text-center">
-              <p className="text-sm text-gray-600 dark:text-white/70">Feeling lonely? 🥱</p>
+              <div className="mt-6 flex w-full items-center justify-center">
+              <div className="inline-flex items-center gap-2  px-3 py-1.5 text-xs text-gray-700  dark:text-white/80">              
+                <span>Feeling lonely?</span>
+                <svg
+                  viewBox="0 0 24 24"
+                  className="h-4 w-4"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden
+                >
+                  <path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2" />
+                  <circle cx="9" cy="7" r="4" />
+                  <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+                  <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+                </svg>
+              </div>
+              </div>
               <button
                 onClick={copyInviteLink}
-                className="mt-1 text-base font-semibold text-indigo-600 hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-indigo-400"
+                className="cursor-pointer mt-1 text-base font-semibold text-indigo-600 hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-indigo-400"
               >
                 {copied ? "Invite link copied!" : "Invite players"}
               </button>
@@ -444,8 +463,22 @@ export default function RoomShell({ sessionId, sessionName, user }) {
       <div className="pointer-events-none fixed inset-x-0 bottom-0 z-30">
         <div className="mx-auto max-w-6xl px-6 pb-6">
           <div className="pointer-events-auto rounded-2xl  p-4 backdrop-blur-md">
-            <div className="mb-3 text-center text-sm text-gray-700 dark:text-white/80">Choose your card 👇</div>
-            <div className="flex flex-wrap items-center justify-center gap-3">
+            <div className="m-4 flex items-center justify-center gap-2 text-xs font-medium text-gray-600 dark:text-white/60">      
+              <span>Choose your card</span>
+              <svg
+                viewBox="0 0 24 24"
+                className="h-4 w-4"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden
+              >
+                <path d="M6 9l6 6 6-6" />
+              </svg>
+            </div>
+            <div className="flex flex-wrap items-center justify-center gap-3 p-3">
               {values.map((v) => {
                 const isSel = selected === v;
                 const isCoffee = v === "☕";
