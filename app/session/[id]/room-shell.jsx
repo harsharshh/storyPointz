@@ -39,6 +39,8 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
   const [votes, setVotes] = useState({});
   const [revealed, setRevealed] = useState(false);
   const [spectators, setSpectators] = useState({}); // { [userId]: true }
+  const spectatorsRef = useRef({});
+  useEffect(() => { spectatorsRef.current = spectators; }, [spectators]);
   const isSelfSpectator = Boolean(user?.id && spectators[user.id]);
   const [revealTick, setRevealTick] = useState(0);
   const revealedRef = useRef(false);
@@ -50,6 +52,7 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
   const activeStoryRef = useRef(null);
   const boardRef = useRef(null);
   const patternRef = useRef(null);
+  const spectatorEyeRef = useRef(null);
   // Reveal countdown (3s) state/refs
   const [countdown, setCountdown] = useState(0); // 0 = idle, >0 running
   const [countText, setCountText] = useState("3");
@@ -69,6 +72,23 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
   };
   const showFloats = Boolean(enableFloatNumbers);
   useEffect(() => { activeStoryRef.current = activeStoryId; }, [activeStoryId]);
+
+  // Spectator eye blink animation
+  useEffect(() => {
+    if (!isSelfSpectator) return; // only animate when self is spectator
+    const eye = spectatorEyeRef.current;
+    if (!eye) return;
+    // Animate the eyelid group by scaling Y to mimic blinking
+    const lid = eye.querySelector('[data-part="lid"]');
+    const pupil = eye.querySelector('[data-part="pupil"]');
+    const tl = gsap.timeline({ repeat: -1, defaults: { ease: 'sine.inOut' } });
+    tl.to(lid, { scaleY: 0.05, transformOrigin: '50% 50%', duration: 0.16 }, 1.6)
+      .to(lid, { scaleY: 1, transformOrigin: '50% 50%', duration: 0.18 })
+      .to(pupil, { y: -0.6, duration: 0.8 }, 0.2)
+      .to(pupil, { y: 0.6, duration: 0.8 }, 1.0)
+      .to(pupil, { y: 0, duration: 0.6 }, 1.8);
+    return () => tl.kill();
+  }, [isSelfSpectator]);
 
   // Initialize spectator mode from localStorage (self) and announce
   useEffect(() => {
@@ -153,10 +173,26 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
         const list = [];
         channel.members.each((m) => list.push({ id: m.id, name: m.info?.name }));
         setMembers(list);
+        // Fetch current spectator list from server best-effort store
+        fetch(`/api/session/${encodeURIComponent(sessionId)}/spectator`, { cache: 'no-store' })
+          .then(r => r.json()).then((d) => {
+            const arr = Array.isArray(d?.spectators) ? d.spectators : [];
+            if (arr.length) setSpectators((prev) => {
+              const next = { ...prev };
+              arr.forEach((uid) => { next[uid] = true; });
+              return next;
+            });
+          }).catch(()=>{});
         // Ask others for current state (e.g., revealed) using client events
         try { channel.trigger && channel.trigger('client-sync-request', { from: user.id }); } catch {}
         // Clear any stale vote for myself across peers (e.g., after refresh)
         try { channel.trigger && channel.trigger('client-clear-my-vote', { userId: user.id }); } catch {}
+        // Ask others to share their spectator state (for refreshed/new client).
+        // Defer slightly to ensure our local event bindings are ready.
+        try {
+          setTimeout(() => { channel.trigger && channel.trigger('client-spectator-sync', { from: user.id }); }, 150);
+          setTimeout(() => { channel.trigger && channel.trigger('client-spectator-sync', { from: user.id }); }, 700);
+        } catch {}
       });
       channel.bind("pusher:member_added", (m) => {
         setMembers((prev) => {
@@ -179,7 +215,7 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
           })();
         }
         // Also share our spectator state so newcomer reflects it
-        const spec = Boolean(user?.id && spectators[user.id]);
+        const spec = Boolean(user?.id && spectatorsRef.current[user.id]);
         if (spec) {
           try { channelRef.current?.trigger?.('client-spectator', { userId: user?.id, spectator: true }); } catch {}
           try { fetch(`/api/session/${encodeURIComponent(sessionId)}/spectator`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: user?.id, spectator: true }) }); } catch {}
@@ -196,6 +232,20 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
       // Newcomers listen for reveal-now and update state
       channel.bind('client-reveal-now', () => {
         setRevealed(true);
+      });
+      // When someone requests spectator sync, respond with our current state if any
+      channel.bind('client-spectator-sync', (payload) => {
+        try {
+          const selfId = user?.id;
+          if (!selfId) return;
+          const spec = Boolean(spectatorsRef.current[selfId]);
+          if (spec) {
+            channel.trigger && channel.trigger('client-spectator', { userId: selfId, spectator: true });
+            fetch(`/api/session/${encodeURIComponent(sessionId)}/spectator`, {
+              method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: selfId, spectator: true })
+            }).catch(() => {});
+          }
+        } catch {}
       });
       const onResetRound = () => { resetRoundLocal(); };
       channel.bind('client-reset-round', onResetRound);
@@ -746,141 +796,184 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
         </div>
       </div>
 
-      {/* Bottom cards rail (hidden for spectators) */}
-      {!isSelfSpectator && (
-      <div className="pointer-events-none fixed inset-x-0 bottom-0 z-30">
-        <div className="mx-auto max-w-6xl px-6 pb-6">
-          <div className="pointer-events-auto rounded-2xl  p-4 backdrop-blur-md">
-            <div className="m-4 flex items-center justify-center gap-2 text-xs font-medium text-gray-600 dark:text-white/60">      
-              <span>Choose your card</span>
-              <svg
-                viewBox="0 0 24 24"
-                className="h-4 w-4"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.8"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden
+      {/* Bottom area: cards for players, banner for spectators */}
+      {isSelfSpectator ? (
+        <div className="pointer-events-auto fixed inset-x-0 bottom-0 z-30">
+          <div className="mx-auto max-w-6xl px-6 pb-6">
+            <div className="flex items-center justify-between gap-4 rounded-2xl border border-black/10 bg-white/80 p-4 shadow-sm backdrop-blur-md dark:border-white/10 dark:bg-white/5">
+              <div className="flex items-center gap-3">
+                {/* Animated eye */}
+                <svg
+                  ref={spectatorEyeRef}
+                  viewBox="0 0 64 32"
+                  className="h-10 w-14 text-gray-800 dark:text-white"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden
+                >
+                  <g data-part="lid" transform="scale(1,1)">
+                    <path d="M2 16s10-14 30-14 30 14 30 14-10 14-30 14S2 16 2 16Z" fill="currentColor" opacity="0.06" />
+                    <path d="M2 16s10-14 30-14 30 14 30 14-10 14-30 14S2 16 2 16Z" />
+                  </g>
+                  <circle data-part="pupil" cx="32" cy="16" r="4" fill="currentColor" />
+                </svg>
+                <div>
+                  <div className="text-sm font-semibold text-gray-900 dark:text-white">You are in spectator mode</div>
+                  <div className="text-xs text-gray-600 dark:text-white/70">You can watch the round but can’t vote.</div>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  // Toggle spectator off via the existing app event used elsewhere
+                  window.dispatchEvent(new CustomEvent('spz:set-spectator', { detail: { spectator: false } }));
+                  try { channelRef.current?.trigger?.('client-spectator', { userId: user?.id, spectator: false }); } catch {}
+                  try { fetch(`/api/session/${encodeURIComponent(sessionId)}/spectator`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: user?.id, spectator: false }) }); } catch {}
+                }}
+                className="cursor-pointer group relative inline-flex items-center gap-2 rounded-2xl px-4 py-2 text-xs font-bold text-gray-900 transition focus:outline-none dark:text-white"
               >
-                <path d="M6 9l6 6 6-6" />
-              </svg>
+                <span className="absolute inset-0 rounded-2xl bg-gradient-to-br from-indigo-500 via-cyan-400 to-emerald-400 opacity-90 [mask:linear-gradient(#000_0_0)_content-box,linear-gradient(#000_0_0)] [mask-composite:exclude] p-[2px]" />
+                <span className="relative">Deactivate</span>
+              </button>
             </div>
-            <div className="flex flex-wrap items-center justify-center gap-3 p-3">
-              {values.map((v) => {
-                const isSel = selected === v;
-                const isCoffee = v === "☕";
-                const isUnknown = v === "?";
-                const [g1, g2] = gradFor(v);
-                return (
-                  <button
-                    key={v}
-                    ref={(el) => { if (el) cardRefs.current[v] = el; }}
-                    onMouseEnter={() => {
-                      const qt = quickLift.current[v];
-                      if (qt && (!selected || selected !== v)) qt(-6);
-                    }}
-                    onMouseLeave={() => {
-                      const qt = quickLift.current[v];
-                      if (qt && (!selected || selected !== v)) qt(0);
-                    }}
-                    onClick={async () => {
-                      // Prevent toggling during countdown or after reveal
-                      if (countdown > 0 || revealedRef.current) return;
-                      const wasSelected = selected === v;
+          </div>
+        </div>
+      ) : (
+        <div className="pointer-events-none fixed inset-x-0 bottom-0 z-30">
+          <div className="mx-auto max-w-6xl px-6 pb-6">
+            <div className="pointer-events-auto rounded-2xl  p-4 backdrop-blur-md">
+              <div className="m-4 flex items-center justify-center gap-2 text-xs font-medium text-gray-600 dark:text-white/60">      
+                <span>Choose your card</span>
+                <svg
+                  viewBox="0 0 24 24"
+                  className="h-4 w-4"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden
+                >
+                  <path d="M6 9l6 6 6-6" />
+                </svg>
+              </div>
+              <div className="flex flex-wrap items-center justify-center gap-3 p-3">
+                {values.map((v) => {
+                  const isSel = selected === v;
+                  const isCoffee = v === "☕";
+                  const isUnknown = v === "?";
+                  const [g1, g2] = gradFor(v);
+                  return (
+                    <button
+                      key={v}
+                      ref={(el) => { if (el) cardRefs.current[v] = el; }}
+                      onMouseEnter={() => {
+                        const qt = quickLift.current[v];
+                        if (qt && (!selected || selected !== v)) qt(-6);
+                      }}
+                      onMouseLeave={() => {
+                        const qt = quickLift.current[v];
+                        if (qt && (!selected || selected !== v)) qt(0);
+                      }}
+                      onClick={async () => {
+                        // Prevent toggling during countdown or after reveal
+                        if (countdown > 0 || revealedRef.current) return;
+                        const wasSelected = selected === v;
 
-                      // If clicking the same selected card -> deselect
-                      if (wasSelected) {
-                        // Lower current card
-                        const curQt = quickLift.current[v];
-                        if (curQt) curQt(0);
-                        lastSelected.current = null;
-                        setSelected(null);
-                        // Clear own vote locally and notify peers
-                        setVotes((prev) => { const n = { ...prev }; if (user?.id) delete n[user.id]; return n; });
-                        try { channelRef.current?.trigger?.('client-clear-my-vote', { userId: user?.id }); } catch {}
-                        // Fallback broadcast via server event so all clients (even without client-event handlers) update
+                        // If clicking the same selected card -> deselect
+                        if (wasSelected) {
+                          // Lower current card
+                          const curQt = quickLift.current[v];
+                          if (curQt) curQt(0);
+                          lastSelected.current = null;
+                          setSelected(null);
+                          // Clear own vote locally and notify peers
+                          setVotes((prev) => { const n = { ...prev }; if (user?.id) delete n[user.id]; return n; });
+                          try { channelRef.current?.trigger?.('client-clear-my-vote', { userId: user?.id }); } catch {}
+                          // Fallback broadcast via server event so all clients (even without client-event handlers) update
+                          try {
+                            await fetch(`/api/session/${encodeURIComponent(sessionId)}/vote`, {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ userId: user?.id, value: "", storyId: activeStoryId }),
+                            });
+                          } catch {}
+                          return;
+                        }
+
+                        // Lower previously selected card if different
+                        const prev = lastSelected.current;
+                        if (prev && prev !== v) {
+                          const prevQt = quickLift.current[prev];
+                          if (prevQt) prevQt(0);
+                        }
+
+                        // Select and lift the new card
+                        setSelected(v);
+                        lastSelected.current = v;
+                        const qt = quickLift.current[v];
+                        if (qt) qt(-10);
+
                         try {
                           await fetch(`/api/session/${encodeURIComponent(sessionId)}/vote`, {
                             method: "POST",
                             headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({ userId: user?.id, value: "", storyId: activeStoryId }),
+                            body: JSON.stringify({ userId: user?.id, value: v, storyId: activeStoryId }),
                           });
                         } catch {}
-                        return;
-                      }
-
-                      // Lower previously selected card if different
-                      const prev = lastSelected.current;
-                      if (prev && prev !== v) {
-                        const prevQt = quickLift.current[prev];
-                        if (prevQt) prevQt(0);
-                      }
-
-                      // Select and lift the new card
-                      setSelected(v);
-                      lastSelected.current = v;
-                      const qt = quickLift.current[v];
-                      if (qt) qt(-10);
-
-                      try {
-                        await fetch(`/api/session/${encodeURIComponent(sessionId)}/vote`, {
-                          method: "POST",
-                          headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify({ userId: user?.id, value: v, storyId: activeStoryId }),
-                        });
-                      } catch {}
-                    }}
-                    className={[
-                      "cursor-pointer aspect-[3/4] w-12 select-none rounded-xl border-2 bg-white text-sm font-semibold shadow-sm will-change-transform transition dark:bg-gray-900",
-                      "hover:shadow-md",
-                      isSel
-                        ? "border-indigo-600 ring-2 ring-indigo-400/50"
-                        : "border-black/10 dark:border-white/10",
-                    ].join(" ")}
-                    aria-pressed={isSel}
-                    aria-label={isCoffee ? "Coffee break" : isUnknown ? "Vote unknown" : `Vote ${v}`}
-                    style={{
-                      // Keep surface white; gradients only on the glyphs
-                      WebkitTapHighlightColor: "transparent",
-                    }}
-                  >
-                    <div className="grid h-full w-full place-items-center">
-                      {isCoffee ? (
-                        <svg viewBox="0 0 64 64" className="h-7 w-7" aria-hidden>
-                          <defs>
-                            <linearGradient id={`mug_${v}`} x1="0%" y1="0%" x2="100%" y2="100%">
-                              <stop offset="0%" stopColor={g1} />
-                              <stop offset="100%" stopColor={g2} />
-                            </linearGradient>
-                          </defs>
-                          <g fill={`url(#mug_${v})`}>
-                            <rect x="12" y="26" rx="4" ry="4" width="28" height="18" />
-                            <path d="M42 30h6a6 6 0 0 1 0 12h-6v-4h6a2 2 0 0 0 0-4h-6z" />
-                          </g>
-                          <g stroke={`url(#mug_${v})`} strokeWidth="2" fill="none">
-                            <path d="M22 18c0 3-3 3-3 6 0 2 2 3 2 5" />
-                            <path d="M28 18c0 3-3 3-3 6 0 2 2 3 2 5" />
-                          </g>
-                        </svg>
-                      ) : (
-                        <span
-                          className="text-[18px] font-extrabold leading-none bg-clip-text text-transparent"
-                          style={{
-                            backgroundImage: `linear-gradient(135deg, ${g1}, ${g2})`,
-                          }}
-                        >
-                          {v}
-                        </span>
-                      )}
-                    </div>
-                  </button>
-                );
-              })}
+                      }}
+                      className={[
+                        "cursor-pointer aspect-[3/4] w-12 select-none rounded-xl border-2 bg-white text-sm font-semibold shadow-sm will-change-transform transition dark:bg-gray-900",
+                        "hover:shadow-md",
+                        isSel
+                          ? "border-indigo-600 ring-2 ring-indigo-400/50"
+                          : "border-black/10 dark:border-white/10",
+                      ].join(" ")}
+                      aria-pressed={isSel}
+                      aria-label={isCoffee ? "Coffee break" : isUnknown ? "Vote unknown" : `Vote ${v}`}
+                      style={{
+                        // Keep surface white; gradients only on the glyphs
+                        WebkitTapHighlightColor: "transparent",
+                      }}
+                    >
+                      <div className="grid h-full w-full place-items-center">
+                        {isCoffee ? (
+                          <svg viewBox="0 0 64 64" className="h-7 w-7" aria-hidden>
+                            <defs>
+                              <linearGradient id={`mug_${v}`} x1="0%" y1="0%" x2="100%" y2="100%">
+                                <stop offset="0%" stopColor={g1} />
+                                <stop offset="100%" stopColor={g2} />
+                              </linearGradient>
+                            </defs>
+                            <g fill={`url(#mug_${v})`}>
+                              <rect x="12" y="26" rx="4" ry="4" width="28" height="18" />
+                              <path d="M42 30h6a6 6 0 0 1 0 12h-6v-4h6a2 2 0 0 0 0-4h-6z" />
+                            </g>
+                            <g stroke={`url(#mug_${v})`} strokeWidth="2" fill="none">
+                              <path d="M22 18c0 3-3 3-3 6 0 2 2 3 2 5" />
+                              <path d="M28 18c0 3-3 3-3 6 0 2 2 3 2 5" />
+                            </g>
+                          </svg>
+                        ) : (
+                          <span
+                            className="text-[18px] font-extrabold leading-none bg-clip-text text-transparent"
+                            style={{
+                              backgroundImage: `linear-gradient(135deg, ${g1}, ${g2})`,
+                            }}
+                          >
+                            {v}
+                          </span>
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
         </div>
-      </div>
       )}
 
       

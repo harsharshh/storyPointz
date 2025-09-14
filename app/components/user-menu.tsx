@@ -53,6 +53,21 @@ export default function UserMenu({ userName = 'Guest user', variant = 'avatar', 
     } catch {}
   }, [sessionId]);
 
+  // Keep local switch in sync when other parts of the app toggle spectator
+  useEffect(() => {
+    const onExternal = (e: Event) => {
+      const detail = (e as CustomEvent)?.detail as { spectator?: boolean } | undefined;
+      if (typeof detail?.spectator === 'boolean') {
+        setSpectator(detail.spectator);
+        try {
+          if (sessionId) localStorage.setItem(`spz_spectator_self_${sessionId}`, String(detail.spectator));
+        } catch {}
+      }
+    };
+    window.addEventListener('spz:set-spectator', onExternal as EventListener);
+    return () => window.removeEventListener('spz:set-spectator', onExternal as EventListener);
+  }, [sessionId]);
+
   const trigger = (
     <button
       ref={btnRef}
