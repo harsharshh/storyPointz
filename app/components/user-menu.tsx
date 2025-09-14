@@ -5,7 +5,7 @@ import { useTheme } from './theme-provider';
 
 type TriggerVariant = 'avatar' | 'chip' | 'icon';
 
-export default function UserMenu({ userName = 'Guest user', variant = 'avatar' }: { userName?: string; variant?: TriggerVariant }) {
+export default function UserMenu({ userName = 'Guest user', variant = 'avatar', sessionId }: { userName?: string; variant?: TriggerVariant; sessionId?: string }) {
   const [open, setOpen] = useState(false);
   const [spectator, setSpectator] = useState(false);
   const btnRef = useRef<HTMLButtonElement | null>(null);
@@ -42,6 +42,16 @@ export default function UserMenu({ userName = 'Guest user', variant = 'avatar' }
       window.removeEventListener('spz:edit-name', openEdit as EventListener);
     };
   }, []);
+
+  // Initialize spectator toggle from localStorage per-session
+  useEffect(() => {
+    if (!sessionId) return;
+    try {
+      const raw = localStorage.getItem(`spz_spectator_self_${sessionId}`);
+      if (raw === 'true') setSpectator(true);
+      if (raw === 'false') setSpectator(false);
+    } catch {}
+  }, [sessionId]);
 
   const trigger = (
     <button
@@ -145,7 +155,12 @@ export default function UserMenu({ userName = 'Guest user', variant = 'avatar' }
                   type="checkbox"
                   className="peer sr-only"
                   checked={spectator}
-                  onChange={(e) => setSpectator(e.target.checked)}
+                  onChange={(e) => {
+                    const next = e.target.checked;
+                    setSpectator(next);
+                    try { if (sessionId) localStorage.setItem(`spz_spectator_self_${sessionId}`, String(next)); } catch {}
+                    try { window.dispatchEvent(new CustomEvent('spz:set-spectator', { detail: { spectator: next } })); } catch {}
+                  }}
                 />
                 {/* Track */}
                 <span className="absolute inset-0 rounded-full bg-gray-300 transition-colors peer-checked:bg-indigo-600 dark:bg-white/20" />

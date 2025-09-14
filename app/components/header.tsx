@@ -82,7 +82,7 @@ export default function Header({ userName, sessionName, sessionId }: { userName?
             <>
               {/* Desktop actions */}
               <div className="hidden items-center gap-3 sm:flex">
-                <UserMenu userName={userName} variant="chip" />
+                <UserMenu userName={userName} variant="chip" sessionId={sessionId} />
                 <button
                   type="button"
                   onClick={() => setInviteOpen(true)}

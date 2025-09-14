@@ -38,6 +38,8 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
   const [members, setMembers] = useState([]);
   const [votes, setVotes] = useState({});
   const [revealed, setRevealed] = useState(false);
+  const [spectators, setSpectators] = useState({}); // { [userId]: true }
+  const isSelfSpectator = Boolean(user?.id && spectators[user.id]);
   const [revealTick, setRevealTick] = useState(0);
   const revealedRef = useRef(false);
   useEffect(() => { revealedRef.current = revealed; }, [revealed]);
@@ -68,11 +70,51 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
   const showFloats = Boolean(enableFloatNumbers);
   useEffect(() => { activeStoryRef.current = activeStoryId; }, [activeStoryId]);
 
+  // Initialize spectator mode from localStorage (self) and announce
+  useEffect(() => {
+    if (!user?.id || !sessionId) return;
+    try {
+      const raw = localStorage.getItem(`spz_spectator_self_${sessionId}`);
+      if (raw === 'true' || raw === 'false') {
+        const flag = raw === 'true';
+        setSpectators((prev) => ({ ...prev, [user.id]: flag }));
+        // let peers know our initial state
+        try { channelRef.current?.trigger?.('client-spectator', { userId: user.id, spectator: flag }); } catch {}
+        try { fetch(`/api/session/${encodeURIComponent(sessionId)}/spectator`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: user.id, spectator: flag }) }); } catch {}
+      }
+    } catch {}
+  }, [user?.id, sessionId]);
+
   useEffect(() => {
     if (!copied) return;
     const t = setTimeout(() => setCopied(false), 1400);
     return () => clearTimeout(t);
   }, [copied]);
+
+  // Listen for spectator toggle from user-menu and broadcast
+  useEffect(() => {
+    const onSpec = (e) => {
+      const flag = !!e?.detail?.spectator;
+      if (!user?.id) return;
+      setSpectators((prev) => ({ ...prev, [user.id]: flag }));
+      // If turning spectator on during an active round (not revealed), clear own vote everywhere
+      if (flag && !revealedRef.current) {
+        const prevSel = lastSelected.current;
+        if (prevSel) { try { quickLift.current[prevSel]?.(0); } catch {} }
+        lastSelected.current = null;
+        setSelected(null);
+        setVotes((p) => { const n = { ...p }; delete n[user.id]; return n; });
+        try { channelRef.current?.trigger?.('client-clear-my-vote', { userId: user.id }); } catch {}
+        // server fallback to broadcast a clear
+        try { fetch(`/api/session/${encodeURIComponent(sessionId)}/vote`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: user.id, value: "", storyId: activeStoryRef.current }) }); } catch {}
+      }
+      try { channelRef.current?.trigger?.('client-spectator', { userId: user.id, spectator: flag }); } catch {}
+      // server fallback for reliability
+      try { fetch(`/api/session/${encodeURIComponent(sessionId)}/spectator`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: user.id, spectator: flag }) }); } catch {}
+    };
+    window.addEventListener('spz:set-spectator', onSpec);
+    return () => window.removeEventListener('spz:set-spectator', onSpec);
+  }, [user?.id, sessionId]);
 
   // Mask overlays are static; no animation needed
 
@@ -136,6 +178,12 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
             } catch {}
           })();
         }
+        // Also share our spectator state so newcomer reflects it
+        const spec = Boolean(user?.id && spectators[user.id]);
+        if (spec) {
+          try { channelRef.current?.trigger?.('client-spectator', { userId: user?.id, spectator: true }); } catch {}
+          try { fetch(`/api/session/${encodeURIComponent(sessionId)}/spectator`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: user?.id, spectator: true }) }); } catch {}
+        }
       });
       // If someone asks for sync, and we've already revealed, notify them to reveal
       channel.bind('client-sync-request', (payload) => {
@@ -180,6 +228,17 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
           setVotes((prev) => ({ ...prev, [payload.userId]: payload.value }));
         }
       });
+      const onSpectator = (payload) => {
+        if (!payload || !payload.userId) return;
+        const flag = Boolean(payload.spectator);
+        setSpectators((prev) => ({ ...prev, [payload.userId]: flag }));
+        // If a user becomes spectator before reveal, remove their vote locally
+        if (flag && !revealedRef.current) {
+          setVotes((prev) => { const n = { ...prev }; delete n[payload.userId]; return n; });
+        }
+      };
+      channel.bind('client-spectator', onSpectator);
+      channel.bind('spectator', onSpectator);
       channel.bind("reveal", () => {
         setRevealed(true);
       });
@@ -412,6 +471,7 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
               const isRevealed = revealed;
               const selfShown = isSelf ? selected : null;
               const valueToShow = isRevealed ? votedVal : selfShown;
+              const isSpectator = Boolean(spectators[id]);
 
               const renderGlyph = (v) => {
                 if (!v) return null;
@@ -472,9 +532,9 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
               ].join(" ");
 
               const isMasked = !isSelf && hasVoted && !isRevealed;
-              const borderClass = isMasked
+              const borderClass = (isMasked || isSpectator)
                 ? "border-transparent"
-                : valueToShow || hasVoted
+                : (valueToShow || hasVoted)
                   ? "border-indigo-600"
                   : "border-black/10 dark:border-white/10";
 
@@ -498,6 +558,17 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
                     <div
                       className={[baseCard, borderClass].join(" ")}
                     >
+                      {/* Spectator badge overlay */}
+                      {isSpectator && (
+                        <div className="pointer-events-none absolute -inset-[2px] z-30 grid place-items-center rounded-[0.9rem] bg-white-900/25 backdrop-blur-[2px] dark:bg-black/30">
+                          <span className="relative grid h-8 w-8 place-items-center rounded-full bg-white/80 shadow-[0_6px_20px_rgba(0,0,0,0.25)] ring-2 ring-white/40 dark:bg-white/10 dark:ring-white/20">
+                            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z" />
+                              <circle cx="12" cy="12" r="3" />
+                            </svg>
+                          </span>
+                        </div>
+                      )}
                       {/* Empty state when no vote */}
                       {!valueToShow && !hasVoted && (
                         renderAvatar()
@@ -675,7 +746,8 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
         </div>
       </div>
 
-      {/* Bottom cards rail */}
+      {/* Bottom cards rail (hidden for spectators) */}
+      {!isSelfSpectator && (
       <div className="pointer-events-none fixed inset-x-0 bottom-0 z-30">
         <div className="mx-auto max-w-6xl px-6 pb-6">
           <div className="pointer-events-auto rounded-2xl  p-4 backdrop-blur-md">
@@ -809,6 +881,7 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
           </div>
         </div>
       </div>
+      )}
 
       
     </div>
