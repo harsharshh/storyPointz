@@ -43,7 +43,7 @@ export default function FloatingNumbers({ values, seed, count = 18, isDark = fal
         const value = values[Math.floor(rng() * values.length)];
         const depth = 0.6 + (col / cols) * 0.9; // slower on left, faster on right
         const scale = 0.8 + rng() * 0.6;
-        const opacity = isDark ? 0.02 + rng() * 0.02 : 0.06 + rng() * 0.06;
+        const opacity = isDark ? 0.01 + rng() * 0.010 : 0.025 + rng() * 0.035;
         out.push({ value, x: cx, y: cy, scale, rot: 0, opacity, depth });
       }
     } else {
@@ -97,19 +97,16 @@ export default function FloatingNumbers({ values, seed, count = 18, isDark = fal
         const base = 12 / depthClamp; // deeper = faster
         const speedScale = speed === 'fast' ? 0.35 : 1; // fast = much quicker
         const dur = base * speedScale;
-        gsap.set(el, { rotation: 0 });
+        // Ensure the very first frame starts at the top to avoid a flash/glitch
+        gsap.set(el, { y: -140, rotation: 0, force3D: true });
         tl.add(
-          gsap.fromTo(
-            el,
-            { y: -140 },
-            {
-              y: 180,
-              duration: dur,
-              ease: 'none',
-              repeat: -1,
-              onRepeat: () => { gsap.set(el, { y: -140 }); },
-            }
-          ),
+          gsap.to(el, {
+            y: 180,
+            duration: dur,
+            ease: 'none',
+            repeat: -1,
+            onRepeat: () => { gsap.set(el, { y: -140 }); },
+          }),
           0
         );
       });
@@ -152,6 +149,7 @@ export default function FloatingNumbers({ values, seed, count = 18, isDark = fal
               top: `${item.y}%`,
               opacity: Math.min(0.25, Math.max(0.02, item.opacity * (isDark ? 0.6 : 1.35))),
               transform: `translate(-50%, -50%) scale(${item.scale}) rotate(${item.rot}deg)`,
+              willChange: 'transform, opacity',
             }}
             width="64"
             height="64"

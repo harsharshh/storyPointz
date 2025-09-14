@@ -43,6 +43,23 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
   const activeStoryRef = useRef(null);
   const boardRef = useRef(null);
   const patternRef = useRef(null);
+  // Reveal countdown (3s) state/refs
+  const [countdown, setCountdown] = useState(0); // 0 = idle, >0 running
+  const [countText, setCountText] = useState("3");
+  const countdownRef = useRef(null);
+  const countdownTlRef = useRef(null);
+  const countdownStateRef = useRef(0);
+  useEffect(() => { countdownStateRef.current = countdown; }, [countdown]);
+
+  // Reset round locally and notify peers helper
+  const resetRoundLocal = () => {
+    setRevealed(false);
+    setVotes({});
+    const prev = lastSelected.current;
+    if (prev) { try { quickLift.current[prev]?.(0); } catch {} }
+    lastSelected.current = null;
+    setSelected(null);
+  };
   const showFloats = Boolean(enableFloatNumbers);
   useEffect(() => { activeStoryRef.current = activeStoryId; }, [activeStoryId]);
 
@@ -127,6 +144,19 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
       channel.bind('client-reveal-now', () => {
         setRevealed(true);
       });
+      const onResetRound = () => { resetRoundLocal(); };
+      channel.bind('client-reset-round', onResetRound);
+      channel.bind('reset-round', onResetRound);
+      // Broadcast + listen for a realtime countdown start.
+      const onCountdown = () => {
+        // Start the 3s countdown on all clients if not already counting and not revealed
+        if (!revealedRef.current && countdownStateRef.current === 0) {
+          setCountText('3');
+          setCountdown(3);
+        }
+      };
+      channel.bind('client-countdown', onCountdown);
+      channel.bind('countdown', onCountdown);
       // When a peer refreshes/joins and asks to clear their prior vote, remove it from our local state
       channel.bind('client-clear-my-vote', (payload) => {
         const uid = payload?.userId;
@@ -189,6 +219,42 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
     return () => { tl?.kill?.(); };
   }, []);
 
+  // Countdown GSAP timeline (top-level hook)
+  useEffect(() => {
+    // kill previous timeline
+    countdownTlRef.current?.kill?.();
+
+    if (countdown === 0) return; // idle
+    const el = countdownRef.current;
+    if (!el) return;
+
+    const tl = gsap.timeline({
+      defaults: { ease: 'power2.out' },
+      onComplete: async () => {
+        setCountdown(0);
+        await revealAll();
+      },
+    });
+
+    const show = (n) => {
+      tl.add(() => {
+        setCountText(String(n));
+        if (el) {
+          // choose a bright random HSL color
+          const hue = Math.floor(Math.random() * 360);
+          el.style.color = `hsl(${hue}, 95%, 55%)`;
+        }
+      });
+      tl.fromTo(el, { scale: 0.7, opacity: 0 }, { scale: 1.3, opacity: 1, duration: 0.4, ease: 'back.out(2)' });
+      tl.to(el, { scale: 0.9, opacity: 0, duration: 0.6, ease: 'power2.in' });
+    };
+
+    show(3); show(2); show(1);
+
+    countdownTlRef.current = tl;
+    return () => tl.kill();
+  }, [countdown]);
+
   async function revealAll() {
     try {
       await fetch(`/api/session/${encodeURIComponent(sessionId)}/reveal`, {
@@ -247,6 +313,8 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
   };
 
   // Floating SVG numbers moved to separate component
+
+  const noVotesYet = !selected && Object.keys(votes || {}).length === 0 && !revealed;
 
   const textureStyleFor = (key) => {
     const rnd = seededRng(key);
@@ -495,19 +563,91 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
                         isDark={isDark}
                         gradFor={gradFor}
                         animationType="parallax"
-                        speed={revealed ? 'fast' : 'slow'}
+                        speed={countdown > 0 ? 'fast' : 'slow'}
                         className="z-10"
                       />
                     )}
 
-                    <div className="relative z-10 inline-flex items-center gap-3">
-                      <button
-                        className="inline-flex items-center justify-center rounded-xl bg-gray-700 px-6 py-3 text-sm font-semibold text-white transition hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-gray-600"
-                        onClick={revealAll}
-                      >
-                        Reveal
-                      </button>
-                    </div>
+                    {noVotesYet ? (
+                      <div className="relative z-10 flex items-center justify-center">
+                        <div className="rounded-xl px-4 py-2 text-lg font-semibold text-gray-700 dark:text-white/80">
+                          Pick your cards!
+                        </div>
+                      </div>
+                    ) : countdown > 0 ? (
+                      <div className="relative z-10 flex items-center justify-center">
+                        <div
+                          ref={countdownRef}
+                          className="select-none rounded-2xl px-6 py-3 text-4xl font-black tracking-tight text-gray-900 opacity-0 dark:text-white"
+                        >
+                          {countText}
+                        </div>
+                      </div>
+                    ) : revealed ? (
+                      <div className="relative z-10 flex items-center justify-center">
+                        <button
+                          onClick={() => {
+                            resetRoundLocal();
+                            try { channelRef.current?.trigger?.('client-reset-round', {}); } catch {}
+                            // Server fallback to ensure all clients receive the reset
+                            try {
+                              fetch(`/api/session/${encodeURIComponent(sessionId)}/reset`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ userId: user?.id }),
+                              });
+                            } catch {}
+                          }}
+                          className="group relative inline-flex items-center gap-2 rounded-2xl px-6 py-3 text-sm font-bold text-gray-900 transition focus:outline-none disabled:opacity-60 dark:text-white"
+                        >
+                          <span className="absolute inset-0 rounded-2xl bg-gradient-to-br from-indigo-500 via-cyan-400 to-emerald-400 opacity-90 [mask:linear-gradient(#000_0_0)_content-box,linear-gradient(#000_0_0)] [mask-composite:exclude] p-[2px]" />
+                          <span className="relative">
+                            <span className="inline-flex items-center gap-2">
+                              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                                <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z" />
+                                <path d="M15 12l-3 3-3-3" />
+                              </svg>
+                              <span>Vote again</span>
+                            </span>
+                          </span>
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="relative z-10 flex items-center justify-center">
+                        <button
+                          onClick={() => {
+                            if (countdownStateRef.current > 0 || revealedRef.current) return;
+                            try { channelRef.current?.trigger?.('client-countdown', { by: user?.id }); } catch {}
+                            // Server fallback to ensure all clients receive the event
+                            try { fetch(`/api/session/${encodeURIComponent(sessionId)}/countdown`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: user?.id }) }); } catch {}
+                            setCountText('3');
+                            setCountdown(3);
+                          }}
+                          disabled={countdown > 0}
+                          className="cursor-pointer group relative inline-flex items-center gap-2 rounded-2xl px-6 py-3 text-sm font-bold text-gray-900 transition focus:outline-none disabled:opacity-60 dark:text-white"
+                        >
+                          <span className=" absolute inset-0 rounded-2xl bg-gradient-to-br from-indigo-500 via-cyan-400 to-emerald-400 opacity-90 [mask:linear-gradient(#000_0_0)_content-box,linear-gradient(#000_0_0)] [mask-composite:exclude] p-[2px]" />
+                          <span className="relative">
+                            <span className="inline-flex items-center gap-2">
+                              <svg
+                                viewBox="0 0 24 24"
+                                className="h-4 w-4 flex-none opacity-80 transition group-hover:opacity-100"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                aria-hidden
+                              >
+                                <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z" />
+                                <circle cx="12" cy="12" r="3" />
+                              </svg>
+                              <span>Reveal Cards</span>
+                            </span>
+                          </span>
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
                   <div className="col-span-2 flex justify-center">
@@ -565,8 +705,8 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
                       if (qt && (!selected || selected !== v)) qt(0);
                     }}
                     onClick={async () => {
-                      // Prevent toggling after reveal
-                      if (revealedRef.current) return;
+                      // Prevent toggling during countdown or after reveal
+                      if (countdown > 0 || revealedRef.current) return;
                       const wasSelected = selected === v;
 
                       // If clicking the same selected card -> deselect

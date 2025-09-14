@@ -4,6 +4,7 @@ import Link from 'next/link';
 import gsap from 'gsap';
 import { useGSAP } from '@gsap/react';
 import { useRef } from 'react';
+import { burstConfetti } from './confetti-burst';
 import type { CSSProperties } from 'react';
 
 const palette: [string, string][] = [
@@ -144,34 +145,8 @@ function HeroDeckVisual() {
         ease: 'power2.out',
       }, '>-0.2')
       .add(() => {
-        // Confetti burst (sparingly)
-        const colors = ['#6366f1', '#22c55e', '#f59e0b', '#ef4444', '#a855f7'];
-        const count = 36;
-        for (let i = 0; i < count; i++) {
-          const s = document.createElement('span');
-          s.className = 'spz-confetti pointer-events-none absolute rounded-full';
-          const size = 4 + Math.random() * 6;
-          s.style.width = `${size}px`;
-          s.style.height = `${size}px`;
-          s.style.background = colors[Math.floor(Math.random() * colors.length)];
-          s.style.left = '50%';
-          s.style.top = '50%';
-          host.appendChild(s);
-
-          const angle = Math.random() * Math.PI * 2;
-          const distance = 80 + Math.random() * 160;
-          const dx = Math.cos(angle) * distance;
-          const dy = Math.sin(angle) * distance;
-
-          gsap.to(s, {
-            x: dx,
-            y: dy,
-            rotate: Math.random() * 720 - 360,
-            opacity: 0,
-            duration: 1.2,
-            ease: 'power2.out',
-            onComplete: () => s.remove(),
-          });
+        if (host) {
+          burstConfetti(host, { count: 36 });
         }
       })
       .to(cards, {
