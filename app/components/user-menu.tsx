@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { useTheme } from './theme-provider';
 
 type TriggerVariant = 'avatar' | 'chip' | 'icon';
 
@@ -9,6 +10,7 @@ export default function UserMenu({ userName = 'Guest user', variant = 'avatar' }
   const [spectator, setSpectator] = useState(false);
   const btnRef = useRef<HTMLButtonElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
+  const { theme, preference, setTheme, useSystem: setSystemPref } = useTheme();
 
   useEffect(() => {
     const onClick = (e: MouseEvent) => {
@@ -152,7 +154,51 @@ export default function UserMenu({ userName = 'Guest user', variant = 'avatar' }
               </label>
             </li>
 
-            {/* <li className="flex items-center justify-between px-4 py-2">
+            {/* Appearance */}
+            {/* <li className="px-4 py-2">
+              <div className="mb-2 flex items-center gap-2 text-gray-700 dark:text-white/80">
+                <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2m10-10h-2M4 12H2m15.364-7.364l-1.414 1.414M8.05 16.95l-1.414 1.414m12.728 0l-1.414-1.414M8.05 7.05 6.636 5.636"/></svg>
+                <span>Appearance</span>
+                <span className="ml-auto text-xs text-gray-500 dark:text-white/50">{preference === 'system' ? 'System' : theme === 'dark' ? 'Dark' : 'Light'}</span>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                <button
+                  type="button"
+                  onClick={() => { setSystemPref(); }}
+                  className={[
+                    'cursor-pointer rounded-lg border px-3 py-1.5 text-sm font-medium transition',
+                    preference === 'system' ? 'border-indigo-500 text-indigo-600 dark:border-indigo-400 dark:text-indigo-300' : 'border-black/10 text-gray-700 hover:bg-black/5 dark:border-white/10 dark:text-white/80 dark:hover:bg-white/10'
+                  ].join(' ')}
+                  aria-pressed={preference === 'system'}
+                >
+                  System
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setTheme('light'); }}
+                  className={[
+                    'cursor-pointer rounded-lg border px-3 py-1.5 text-sm font-medium transition',
+                    preference === 'light' ? 'border-indigo-500 text-indigo-600 dark:border-indigo-400 dark:text-indigo-300' : 'border-black/10 text-gray-700 hover:bg-black/5 dark:border-white/10 dark:text-white/80 dark:hover:bg-white/10'
+                  ].join(' ')}
+                  aria-pressed={preference === 'light'}
+                >
+                  Light
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setTheme('dark'); }}
+                  className={[
+                    'cursor-pointer rounded-lg border px-3 py-1.5 text-sm font-medium transition',
+                    preference === 'dark' ? 'border-indigo-500 text-indigo-600 dark:border-indigo-400 dark:text-indigo-300' : 'border-black/10 text-gray-700 hover:bg-black/5 dark:border-white/10 dark:text-white/80 dark:hover:bg-white/10'
+                  ].join(' ')}
+                  aria-pressed={preference === 'dark'}
+                >
+                  Dark
+                </button>
+              </div>
+            </li> */}
+
+            <li className="flex items-center justify-between px-4 py-2">
               <button
                 className="flex items-center gap-3 text-left text-gray-700 hover:text-gray-900 dark:text-white/80 dark:hover:text-white"
                 onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
@@ -160,8 +206,8 @@ export default function UserMenu({ userName = 'Guest user', variant = 'avatar' }
                 <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2m10-10h-2M4 12H2m15.364-7.364l-1.414 1.414M8.05 16.95l-1.414 1.414m12.728 0l-1.414-1.414M8.05 7.05 6.636 5.636"/></svg>
                 <span>Appearance</span>
               </button>
-              <span className="text-xs text-gray-500 dark:text-white/50">{theme === 'dark' ? 'Dark' : 'Light'}</span>
-            </li> */}
+              <span className="text-xs text-gray-500 dark:text-white/50">{'System'}</span>
+            </li>
 
             {/* <MenuItem
               icon={<svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v4"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>}

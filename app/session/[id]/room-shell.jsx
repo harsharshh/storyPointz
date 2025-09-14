@@ -4,8 +4,10 @@
 import { useEffect, useMemo, useState, useRef } from "react";
 import gsap from "gsap";
 import Header from "../../components/header";
+import FloatingNumbers from "../../components/floating-numbers";
+import { useTheme } from "../../components/theme-provider";
 
-export default function RoomShell({ sessionId, sessionName, user }) {
+export default function RoomShell({ sessionId, sessionName, user, enableFloatNumbers = true }) {
   const values = ["0", "1", "2", "3", "5", "8", "13", "21", "34", "55", "89", "?", "☕"];
   // GSAP card button refs
   const cardRefs = useRef({});
@@ -29,6 +31,9 @@ export default function RoomShell({ sessionId, sessionName, user }) {
     });
   }, [values, selected]);
   const [copied, setCopied] = useState(false);
+  // Read theme from ThemeProvider rather than DOM class observers
+  const { theme } = useTheme();
+  const isDark = theme === 'dark';
   const [members, setMembers] = useState([]);
   const [votes, setVotes] = useState({});
   const [revealed, setRevealed] = useState(false);
@@ -36,6 +41,9 @@ export default function RoomShell({ sessionId, sessionName, user }) {
   useEffect(() => { revealedRef.current = revealed; }, [revealed]);
   const [activeStoryId, setActiveStoryId] = useState(null);
   const activeStoryRef = useRef(null);
+  const boardRef = useRef(null);
+  const patternRef = useRef(null);
+  const showFloats = Boolean(enableFloatNumbers);
   useEffect(() => { activeStoryRef.current = activeStoryId; }, [activeStoryId]);
 
   useEffect(() => {
@@ -158,7 +166,28 @@ export default function RoomShell({ sessionId, sessionName, user }) {
     };
     window.addEventListener('spz:active-story', onActive);
     return () => window.removeEventListener('spz:active-story', onActive);
-  }, [sessionId]);
+  }, [sessionId, isDark]);
+
+  // Animate SVG pattern on the board (dense thread drift)
+  useEffect(() => {
+    const svg = patternRef.current;
+    if (!svg) return;
+    const pat = svg.querySelector('pattern');
+    if (!pat) return;
+    // Animate the pattern transform subtly (dense thread drift)
+    const tl = gsap.fromTo(
+      pat,
+      { attr: { patternTransform: 'rotate(45) translate(0 0)' } },
+      {
+        attr: { patternTransform: 'rotate(45) translate(0 16)' },
+        duration: 6,
+        repeat: -1,
+        yoyo: true,
+        ease: 'sine.inOut',
+      }
+    );
+    return () => { tl?.kill?.(); };
+  }, []);
 
   async function revealAll() {
     try {
@@ -207,6 +236,8 @@ export default function RoomShell({ sessionId, sessionName, user }) {
     return coolWarmPairs[idx];
   };
 
+  
+
   // --- Randomized woven texture per card (stable per user) ---
   const seededRng = (seedKey) => {
     const s = String(seedKey || "seed");
@@ -214,6 +245,8 @@ export default function RoomShell({ sessionId, sessionName, user }) {
     for (let i = 0; i < s.length; i++) h = (h ^ s.charCodeAt(i)) * 16777619 >>> 0;
     return () => (h = (h * 1664525 + 1013904223) >>> 0) / 0xffffffff;
   };
+
+  // Floating SVG numbers moved to separate component
 
   const textureStyleFor = (key) => {
     const rnd = seededRng(key);
@@ -247,13 +280,16 @@ export default function RoomShell({ sessionId, sessionName, user }) {
     };
   };
 
+  // animation handled inside FloatingNumbers component
+
   return (
     <div className="relative h-[100dvh] overflow-hidden overscroll-none">
       <Header userName={user?.name} sessionName={sessionName} sessionId={sessionId} />
 
       {/* Stage */}
       <div className="mx-auto max-w-6xl px-6">
-        <div className="flex h-[calc(100dvh-56px-160px)] flex-col items-center justify-center gap-8 pt-6 sm:h-[calc(100dvh-64px-160px)] sm:pt-8 overflow-hidden">
+        <div className="relative flex h-[calc(100dvh-56px-160px)] flex-col items-center justify-center gap-8 pt-6 sm:h-[calc(100dvh-64px-160px)] sm:pt-8 overflow-hidden">
+          {/* Invite helper (hide when more than one participant) */}
           {/* Invite helper (hide when more than one participant) */}
           {members.length <= 1 && (
             <div className="text-center">
@@ -430,18 +466,48 @@ export default function RoomShell({ sessionId, sessionName, user }) {
                   <div className="col-span-2 flex justify-center">
                     {left[0] ? <Seat id={left[0].id} name={left[0].name} /> : <div className="h-16" />}
                   </div>
-                  <div className="col-span-8">
-                    <div className="relative w-full rounded-3xl border bg-indigo-50/60 p-10 text-center text-gray-800 shadow-sm dark:border-white/10 dark:bg-white/5 dark:text-white">
-                      <div className="inline-flex items-center gap-3">
-                        <button
-                          className="inline-flex items-center justify-center rounded-xl bg-gray-700 px-6 py-3 text-sm font-semibold text-white transition hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-gray-600"
-                          onClick={revealAll}
-                        >
-                          Reveal
-                        </button>
-                      </div>
+                <div className="col-span-8">
+                  <div
+                    ref={boardRef}
+                    className="relative w-full overflow-hidden rounded-3xl border border-black/10 bg-white/90 p-10 text-center text-gray-800 shadow-sm dark:border-white/10 dark:bg-gray-900/90 dark:text-white"
+                  >
+                    {/* Dense, threaded SVG pattern (animated) */}
+                    <svg
+                      ref={patternRef}
+                      className="w-full pointer-events-none absolute inset-0 z-0 opacity-50 dark:opacity-25 text-gray-700/50 dark:text-white/40"
+                      aria-hidden
+                    >
+                      <defs>
+                        <pattern id="spzDense" width="16" height="16" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+                          <rect width="16" height="16" fill="none"/>
+                          <path d="M0 8 H16 M8 0 V16" stroke="currentColor" strokeWidth="0.6" opacity="0.35"/>
+                        </pattern>
+                      </defs>
+                      <rect x="0" y="0" width="100%" height="100%" fill="url(#spzDense)" />
+                    </svg>
+
+                    {/* Floating SVG numbers background (inside board, above pattern) */}
+                    {showFloats && (
+                      <FloatingNumbers
+                        values={numericValues}
+                        seed={`floats_${sessionId}`}
+                        count={18}
+                        isDark={isDark}
+                        gradFor={gradFor}
+                        className="z-10"
+                      />
+                    )}
+
+                    <div className="relative z-10 inline-flex items-center gap-3">
+                      <button
+                        className="inline-flex items-center justify-center rounded-xl bg-gray-700 px-6 py-3 text-sm font-semibold text-white transition hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-gray-600"
+                        onClick={revealAll}
+                      >
+                        Reveal
+                      </button>
                     </div>
                   </div>
+                </div>
                   <div className="col-span-2 flex justify-center">
                     {right[0] ? <Seat id={right[0].id} name={right[0].name} /> : <div className="h-16" />}
                   </div>

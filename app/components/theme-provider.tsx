@@ -2,7 +2,7 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 
 type Scheme = 'light' | 'dark';
-type Preference = Scheme | null;
+type Preference = Scheme | 'system';
 
 type ThemeCtx = {
   theme: Scheme;
@@ -20,7 +20,7 @@ function apply(theme: Scheme){
 }
 
 export function ThemeProvider({ children }: { children: React.ReactNode }){
-  const [preference, setPreference] = useState<Preference>(null);
+  const [preference, setPreference] = useState<Preference>('system');
   const [systemDark, setSystemDark] = useState(false);
 
   useEffect(() => {
@@ -29,24 +29,29 @@ export function ThemeProvider({ children }: { children: React.ReactNode }){
     const sys = !!mql?.matches;
     setSystemDark(sys);
 
-    if (stored === 'dark' || stored === 'light') {
-      setPreference(stored);
-      apply(stored);
-    } else if (preference === null) {
-      apply(sys ? 'dark' : 'light');
+    if (stored === 'dark' || stored === 'light' || stored === 'system') {
+      setPreference(stored as Preference);
+    } else {
+      // First time: default to system and persist
+      setPreference('system');
+      try { localStorage.setItem('theme', 'system'); } catch {}
     }
 
     const onChange = (e: MediaQueryListEvent) => {
       setSystemDark(e.matches);
-      if (preference === null) {
-        apply(e.matches ? 'dark' : 'light');
-      }
+      // When following system, reflect changes immediately
+      // Local storage stays 'system' to indicate the source of truth
     };
     mql?.addEventListener?.('change', onChange);
     return () => mql?.removeEventListener?.('change', onChange);
-  }, [preference]);
+  }, []);
 
-  const theme: Scheme = preference ?? (systemDark ? 'dark' : 'light');
+  const theme: Scheme = preference === 'system' ? (systemDark ? 'dark' : 'light') : preference;
+
+  // Apply theme class whenever resolved theme changes
+  useEffect(() => {
+    apply(theme);
+  }, [theme]);
 
   const value = useMemo<ThemeCtx>(() => ({
     theme,
@@ -54,17 +59,17 @@ export function ThemeProvider({ children }: { children: React.ReactNode }){
     toggleTheme: () => {
       const next: Scheme = theme === 'dark' ? 'light' : 'dark';
       setPreference(next);
-      localStorage.setItem('theme', next);
+      try { localStorage.setItem('theme', next); } catch {}
       apply(next);
     },
     setTheme: (next: Scheme) => {
       setPreference(next);
-      localStorage.setItem('theme', next);
+      try { localStorage.setItem('theme', next); } catch {}
       apply(next);
     },
     useSystem: () => {
-      setPreference(null);
-      localStorage.removeItem('theme');
+      setPreference('system');
+      try { localStorage.setItem('theme', 'system'); } catch {}
       apply(systemDark ? 'dark' : 'light');
     }
   }), [theme, preference, systemDark]);
