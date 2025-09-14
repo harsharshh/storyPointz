@@ -524,6 +524,56 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
               const selfShown = isSelf ? selected : null;
               const valueToShow = isRevealed ? votedVal : selfShown;
               const isSpectator = Boolean(spectators[id]);
+              const maskRef = useRef(null);
+              const valueRef = useRef(null);
+              const cardRootRef = useRef(null);
+
+              // Creamy-smooth reveal: gently blur+fade mask out, ease value in with slight lift
+              useEffect(() => {
+                const maskEl = maskRef.current;
+                const valEl = valueRef.current;
+                const cardEl = cardRootRef.current;
+
+                const ctx = gsap.context(() => {
+                  // Reset when not revealed or no vote
+                  if (!isRevealed || !hasVoted) {
+                    if (maskEl) gsap.set(maskEl, { opacity: (hasVoted && !isSelf) ? 1 : 0, filter: 'blur(0px)' });
+                    if (valEl) gsap.set(valEl, { opacity: (isSelf && valueToShow && !isRevealed) ? 1 : 0, y: 0, scale: 1 });
+                    if (cardEl) gsap.set(cardEl, { scale: 1 });
+                    return;
+                  }
+
+                  // When revealed: fade/blur mask out and bring value in with subtle lift
+                  if (hasVoted) {
+                    const tl = gsap.timeline({ defaults: { overwrite: true } });
+                    if (!isSelf && maskEl) {
+                      tl.to(maskEl, {
+                        opacity: 0,
+                        filter: 'blur(1.5px)',
+                        duration: 0.42,
+                        ease: 'power2.out',
+                        force3D: true,
+                      }, 0);
+                    }
+                    if (valEl) {
+                      tl.fromTo(valEl,
+                        { opacity: 0, y: 8, scale: 0.985, willChange: 'transform,opacity' },
+                        { opacity: 1, y: 0, scale: 1, duration: 0.50, ease: 'power3.out', force3D: true },
+                        0.18 // tiny overlap for creaminess
+                      );
+                    }
+                    if (cardEl) {
+                      tl.fromTo(cardEl,
+                        { scale: 0.998 },
+                        { scale: 1, duration: 0.50, ease: 'sine.out' },
+                        0
+                      );
+                    }
+                    return () => tl.kill();
+                  }
+                });
+                return () => ctx.revert();
+              }, [isRevealed, hasVoted, isSelf, valueToShow]);
 
               const renderGlyph = (v) => {
                 if (!v) return null;
@@ -608,6 +658,7 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
                       </button>
                     )}
                     <div
+                      ref={cardRootRef}
                       className={[baseCard, borderClass].join(" ")}
                     >
                       {/* Spectator badge overlay */}
@@ -621,25 +672,35 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
                           </span>
                         </div>
                       )}
-                      {/* Empty state when no vote */}
-                      {!valueToShow && !hasVoted && (
-                        renderAvatar()
+                      {/* Base content stack: avatar / self value (pre-reveal) / mask / revealed value */}
+                      {/* Avatar when not voted */}
+                      {(!hasVoted) && (
+                        <div className="grid h-full w-full place-items-center">
+                          {renderAvatar()}
+                        </div>
                       )}
 
-                      {/* Shown value for self or after reveal */}
-                      {valueToShow && (
-                        <div className="pointer-events-none">
+                      {/* Self value before reveal */}
+                      {(isSelf && valueToShow && !isRevealed) && (
+                        <div className="pointer-events-none grid h-full w-full place-items-center transform-gpu">
                           {renderGlyph(valueToShow)}
                         </div>
                       )}
 
-                      {/* Other users: mask their value until reveal */}
-                      {!isSelf && hasVoted && !isRevealed && (
+                      {/* Mask overlay for others (voted, unrevealed) */}
+                      {(hasVoted && !isSelf && !isRevealed) && (
                         <div
-                          className="absolute inset-0 z-20 rounded-xl cursor-default"
+                          ref={maskRef}
+                          className="absolute inset-0 rounded-xl transform-gpu"
                           style={textureStyleFor(id)}
-                          onClick={(e) => e.stopPropagation()}
                         />
+                      )}
+
+                      {/* Revealed value (fades in) */}
+                      {(hasVoted && isRevealed) && (
+                        <div ref={valueRef} className="pointer-events-none absolute inset-0 grid place-items-center transform-gpu" style={{ opacity: 0 }}>
+                          {renderGlyph(votedVal)}
+                        </div>
                       )}
                     </div>
                   </div>
