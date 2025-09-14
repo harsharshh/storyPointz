@@ -11,6 +11,8 @@ type Props = {
   className?: string; // extra classes on wrapper
   gradFor: (v: string) => [string, string]; // gradient per value
   animationType?: 'floating' | 'parallax';
+  // Parallax speed profile: 'slow' (default) or 'fast'
+  speed?: 'slow' | 'fast';
 };
 
 function seededRng(seedKey: string) {
@@ -20,7 +22,7 @@ function seededRng(seedKey: string) {
   return () => (h = (h * 1664525 + 1013904223) >>> 0) / 0xffffffff;
 }
 
-export default function FloatingNumbers({ values, seed, count = 18, isDark = false, className = '', gradFor, animationType = 'parallax' }: Props) {
+export default function FloatingNumbers({ values, seed, count = 18, isDark = false, className = '', gradFor, animationType = 'parallax', speed = 'slow' }: Props) {
   const floatsRef = useRef<Array<SVGSVGElement | null>>([]);
 
   type Item = { value: string; x: number; y: number; scale: number; rot: number; opacity: number; depth?: number };
@@ -91,7 +93,10 @@ export default function FloatingNumbers({ values, seed, count = 18, isDark = fal
     if (animationType === 'parallax') {
       nodes.forEach((el, idx) => {
         const depth = items[idx]?.depth || 1;
-        const dur = 12 / Math.max(0.2, Math.min(1.5, depth)); // deeper = faster
+        const depthClamp = Math.max(0.2, Math.min(1.5, depth));
+        const base = 12 / depthClamp; // deeper = faster
+        const speedScale = speed === 'fast' ? 0.35 : 1; // fast = much quicker
+        const dur = base * speedScale;
         gsap.set(el, { rotation: 0 });
         tl.add(
           gsap.fromTo(
@@ -127,7 +132,7 @@ export default function FloatingNumbers({ values, seed, count = 18, isDark = fal
       });
     }
     return () => { tl.kill(); };
-  }, [items, animationType]);
+  }, [items, animationType, speed]);
 
   // Reset refs array on re-render length change
   floatsRef.current = new Array(items.length).fill(null);

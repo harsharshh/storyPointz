@@ -10,7 +10,7 @@ export default function UserMenu({ userName = 'Guest user', variant = 'avatar' }
   const [spectator, setSpectator] = useState(false);
   const btnRef = useRef<HTMLButtonElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
-  const { theme, preference, setTheme, useSystem: setSystemPref } = useTheme();
+  const { theme, preference, setTheme } = useTheme();
 
   useEffect(() => {
     const onClick = (e: MouseEvent) => {
@@ -206,7 +206,7 @@ export default function UserMenu({ userName = 'Guest user', variant = 'avatar' }
                 <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2m10-10h-2M4 12H2m15.364-7.364l-1.414 1.414M8.05 16.95l-1.414 1.414m12.728 0l-1.414-1.414M8.05 7.05 6.636 5.636"/></svg>
                 <span>Appearance</span>
               </button>
-              <span className="text-xs text-gray-500 dark:text-white/50">{'System'}</span>
+              <span className="text-xs text-gray-500 dark:text-white/50">{preference}</span>
             </li>
 
             {/* <MenuItem
