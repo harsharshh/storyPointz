@@ -12,7 +12,7 @@ export default async function SessionPage({ params }: Props) {
   if (!session) return notFound();
 
   return (
-    <main className="min-h-screen px-6 py-10">
+    <main className="min-h-screen">
       {/* Client-side gate handles username modal and localStorage */}
       <SessionGate sessionId={session.id} sessionName={session.name} />
     </main>

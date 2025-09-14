@@ -2,7 +2,9 @@
 
 import { useEffect, useRef, useState } from 'react';
 
-export default function UserMenu({ userName = 'Guest user' }: { userName?: string }) {
+type TriggerVariant = 'avatar' | 'chip' | 'icon';
+
+export default function UserMenu({ userName = 'Guest user', variant = 'avatar' }: { userName?: string; variant?: TriggerVariant }) {
   const [open, setOpen] = useState(false);
   const [spectator, setSpectator] = useState(false);
   const btnRef = useRef<HTMLButtonElement | null>(null);
@@ -27,18 +29,47 @@ export default function UserMenu({ userName = 'Guest user' }: { userName?: strin
     };
   }, [open]);
 
-  return (
-    <div className="relative">
-      {/* Trigger */}
-      <button
-        ref={btnRef}
-        type="button"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        aria-label="User menu"
-        onClick={() => setOpen((v) => !v)}
-        className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-black/10 bg-white/70 backdrop-blur text-gray-700 transition cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-white/10 dark:bg-white/10 dark:text-white"
-      >
+  // Allow external toggles (from header chip or seat pencil)
+  useEffect(() => {
+    const toggle = () => setOpen((v) => !v);
+    const openEdit = () => setOpen(true);
+    window.addEventListener('spz:toggle-user-menu', toggle as EventListener);
+    window.addEventListener('spz:edit-name', openEdit as EventListener);
+    return () => {
+      window.removeEventListener('spz:toggle-user-menu', toggle as EventListener);
+      window.removeEventListener('spz:edit-name', openEdit as EventListener);
+    };
+  }, []);
+
+  const trigger = (
+    <button
+      ref={btnRef}
+      type="button"
+      aria-haspopup="menu"
+      aria-expanded={open}
+      aria-label="User menu"
+      onClick={() => setOpen((v) => !v)}
+      className={
+        variant === 'chip'
+          ? 'inline-flex items-center gap-2 rounded-full border border-indigo-500/50 bg-white/70 px-3 py-1.5 text-sm font-semibold text-gray-900 backdrop-blur transition hover:bg-white/90 dark:border-indigo-400/40 dark:bg-white/10 dark:text-white dark:hover:bg-gray-900 hover:cursor-pointer'
+          : variant === 'avatar'
+          ? 'inline-flex h-9 w-9 items-center justify-center rounded-full border border-black/10 bg-white/70 backdrop-blur text-gray-700 transition hover:bg-white/90 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-white/10 dark:bg-white/10 dark:text-white'
+          : 'inline-flex h-9 w-9 items-center justify-center rounded-full border border-black/10 bg-white/70 backdrop-blur text-gray-700 transition hover:bg-white/90 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-white/10 dark:bg-white/10 dark:text-white'
+      }
+    >
+      {variant === 'chip' ? (
+        <>
+          <span className="grid h-7 w-7 place-items-center rounded-full bg-gradient-to-br from-indigo-500 to-emerald-500 text-white">
+            {(userName?.[0] || 'U').toUpperCase()}
+          </span>
+          <span className="max-w-[22vw] truncate">{userName || 'Guest user'}</span>
+          <svg viewBox="0 0 24 24" className="h-4 w-4 opacity-70" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+        </>
+      ) : variant === 'avatar' ? (
+        <span className="grid h-7 w-7 place-items-center rounded-full bg-gradient-to-br from-indigo-500 to-emerald-500 text-white font-bold">
+          {(userName?.[0] || 'U').toUpperCase()}
+        </span>
+      ) : (
         <svg
           viewBox="0 0 24 24"
           className="h-5 w-5"
@@ -52,7 +83,14 @@ export default function UserMenu({ userName = 'Guest user' }: { userName?: strin
           <path d="M20 21a8 8 0 0 0-16 0"/>
           <circle cx="12" cy="8" r="4"/>
         </svg>
-      </button>
+      )}
+    </button>
+  );
+
+  return (
+    <div className="relative">
+      {/* Trigger */}
+      {trigger}
 
       {/* Panel */}
       {open && (
@@ -148,5 +186,3 @@ export default function UserMenu({ userName = 'Guest user' }: { userName?: strin
     </div>
   );
 }
-
-
