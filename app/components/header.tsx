@@ -238,7 +238,7 @@ export default function Header({ userName, sessionName, sessionId }: { userName?
         </div>
       )}
 
-      <StoriesDrawer open={storiesOpen} onClose={() => setStoriesOpen(false)} />
+      <StoriesDrawer open={storiesOpen} onClose={() => setStoriesOpen(false)} sessionId={sessionId} />
     </header>
   );
 }

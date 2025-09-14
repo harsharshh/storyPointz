@@ -5,9 +5,24 @@ import React from "react";
 type StoriesDrawerProps = {
   open: boolean;
   onClose: () => void;
+  sessionId?: string;
 };
 
-export default function StoriesDrawer({ open, onClose }: StoriesDrawerProps) {
+export default function StoriesDrawer({ open, onClose, sessionId }: StoriesDrawerProps) {
+  const [stories, setStories] = React.useState<Array<{ id: string; key: string; title: string }>>([]);
+  React.useEffect(() => {
+    if (!open || !sessionId) return;
+    (async () => {
+      try {
+        const res = await fetch(`/api/session/${encodeURIComponent(sessionId)}/stories`, { cache: 'no-store' });
+        if (!res.ok) throw new Error('failed');
+        const data = await res.json();
+        setStories(data.stories || []);
+      } catch {
+        setStories([]);
+      }
+    })();
+  }, [open, sessionId]);
   if (!open) return null;
 
   return (
@@ -29,20 +44,25 @@ export default function StoriesDrawer({ open, onClose }: StoriesDrawerProps) {
           </div>
         </div>
 
-        {/* Example story card */}
+        {/* Stories list */}
         <div className="space-y-3">
-          <div className="rounded-2xl border border-black/10 bg-gray-100 p-4 text-gray-900 shadow-sm dark:border-white/10 dark:bg-white/5 dark:text-white">
-            <div className="mb-2 flex items-center justify-between text-sm font-semibold opacity-80">
-              <span>PP-1</span>
-              <button className="inline-grid h-8 w-8 place-items-center rounded-lg border border-black/10 text-gray-700 hover:bg-black/5 dark:border-white/10 dark:text-white/80 dark:hover:bg-white/10" title="Menu">•••</button>
-            </div>
-            <div className="mb-3 text-sm">Test</div>
-            <div className="flex items-center justify-between">
-              <button className="rounded-xl bg-gray-700 px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-gray-600">Vote this issue</button>
-              <button className="inline-grid h-8 w-8 place-items-center rounded-lg border border-black/10 text-gray-700 hover:bg-black/5 dark:border-white/10 dark:text-white/80 dark:hover:bg-white/10">-</button>
-            </div>
-          </div>
-
+          {stories.length === 0 ? (
+            <div className="text-sm text-gray-600 dark:text-white/70">No stories yet.</div>
+          ) : (
+            stories.map((s) => (
+              <div key={s.id} className="rounded-2xl border border-black/10 bg-gray-100 p-4 text-gray-900 shadow-sm dark:border-white/10 dark:bg-white/5 dark:text-white">
+                <div className="mb-2 flex items-center justify-between text-sm font-semibold opacity-80">
+                  <span>{s.key}</span>
+                  <button className="inline-grid h-8 w-8 place-items-center rounded-lg border border-black/10 text-gray-700 hover:bg-black/5 dark:border-white/10 dark:text-white/80 dark:hover:bg-white/10" title="Menu">•••</button>
+                </div>
+                <div className="mb-3 text-sm">{s.title}</div>
+                <div className="flex items-center justify-between">
+                  <button className="rounded-xl bg-gray-700 px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-gray-600">Vote this issue</button>
+                  <button className="inline-grid h-8 w-8 place-items-center rounded-lg border border-black/10 text-gray-700 hover:bg-black/5 dark:border-white/10 dark:text-white/80 dark:hover:bg-white/10">-</button>
+                </div>
+              </div>
+            ))
+          )}
           <button className="mt-2 inline-flex w-full items-center justify-start gap-2 rounded-2xl border border-black/10 bg-white/70 px-4 py-3 text-sm font-semibold text-gray-900 backdrop-blur hover:bg-white/90 dark:border-white/10 dark:bg-white/10 dark:text-white">
             <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
             Add another issue
@@ -52,4 +72,3 @@ export default function StoriesDrawer({ open, onClose }: StoriesDrawerProps) {
     </div>
   );
 }
-
