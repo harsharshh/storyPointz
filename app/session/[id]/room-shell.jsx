@@ -1,11 +1,30 @@
+/* eslint-disable react-hooks/exhaustive-deps */
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
+import gsap from "gsap";
 import Header from "../../components/header";
 
 export default function RoomShell({ sessionId, sessionName, user }) {
   const values = ["0", "1", "2", "3", "5", "8", "13", "21", "34", "55", "89", "?", "☕"];
+  // GSAP card button refs
+  const cardRefs = useRef({});
+  const quickLift = useRef({});
+  const lastSelected = useRef(null);
   const [selected, setSelected] = useState(null);
+  useEffect(() => {
+    // create smooth, fast tweeners per card using gsap.quickTo
+    values.forEach((v) => {
+      const el = cardRefs.current[v];
+      if (!el) return;
+      // only create once per element
+      if (!quickLift.current[v] || quickLift.current[v]._el !== el) {
+        const qt = gsap.quickTo(el, "y", { duration: 0.14, ease: "power3.out" });
+        qt._el = el; // track the element
+        quickLift.current[v] = qt;
+      }
+    });
+  }, [values, selected]);
   const [copied, setCopied] = useState(false);
   const [members, setMembers] = useState([]);
   const [votes, setVotes] = useState({});
@@ -107,6 +126,27 @@ export default function RoomShell({ sessionId, sessionName, user }) {
       }
     } catch {}
   }
+
+  // --- Gradients for numeric cards (cool → warm) ---
+  const numericValues = ["0","1","2","3","5","8","13","21","34","55","89"];
+  const coolWarmPairs = [
+    ["#60A5FA", "#22D3EE"], // 0  (blue → cyan)
+    ["#4F46E5", "#06B6D4"], // 1  (indigo → cyan)
+    ["#14B8A6", "#34D399"], // 2  (teal → emerald)
+    ["#10B981", "#A3E635"], // 3  (emerald → lime)
+    ["#84CC16", "#F59E0B"], // 5  (lime → amber)
+    ["#F59E0B", "#F97316"], // 8  (amber → orange)
+    ["#F97316", "#EF4444"], // 13 (orange → red)
+    ["#EF4444", "#F43F5E"], // 21 (red → rose)
+    ["#F43F5E", "#FB7185"], // 34 (rose shades)
+    ["#FB7185", "#A855F7"], // 55 (rose → violet)
+    ["#A855F7", "#F59E0B"], // 89 (violet → amber for accent)
+  ];
+  const gradFor = (v) => {
+    const idx = numericValues.indexOf(String(v));
+    if (idx === -1) return ["#818CF8", "#22D3EE"]; // default (indigo → cyan)
+    return coolWarmPairs[idx] || coolWarmPairs[coolWarmPairs.length - 1];
+  };
 
   return (
     <div className="relative h-[100dvh] overflow-hidden overscroll-none">
@@ -230,17 +270,40 @@ export default function RoomShell({ sessionId, sessionName, user }) {
       {/* Bottom cards rail */}
       <div className="pointer-events-none fixed inset-x-0 bottom-0 z-30">
         <div className="mx-auto max-w-6xl px-6 pb-6">
-          <div className="pointer-events-auto rounded-2xl border border-black/10 bg-white/80 p-4 backdrop-blur-md dark:border-white/10 dark:bg-[#0f1115]/80">
+          <div className="pointer-events-auto rounded-2xl  p-4 backdrop-blur-md">
             <div className="mb-3 text-center text-sm text-gray-700 dark:text-white/80">Choose your card 👇</div>
             <div className="flex flex-wrap items-center justify-center gap-3">
               {values.map((v) => {
                 const isSel = selected === v;
                 const isCoffee = v === "☕";
+                const isUnknown = v === "?";
+                const [g1, g2] = gradFor(v);
                 return (
                   <button
                     key={v}
+                    ref={(el) => { if (el) cardRefs.current[v] = el; }}
+                    onMouseEnter={() => {
+                      const qt = quickLift.current[v];
+                      if (qt && (!selected || selected !== v)) qt(-10);
+                    }}
+                    onMouseLeave={() => {
+                      const qt = quickLift.current[v];
+                      if (qt && (!selected || selected !== v)) qt(0);
+                    }}
                     onClick={async () => {
+                      // Lower previously selected card if different
+                      const prev = lastSelected.current;
+                      if (prev && prev !== v) {
+                        const prevQt = quickLift.current[prev];
+                        if (prevQt) prevQt(0);
+                      }
+
+                      // Mark new selection and lift it
                       setSelected(v);
+                      lastSelected.current = v;
+                      const qt = quickLift.current[v];
+                      if (qt) qt(-18);
+
                       try {
                         await fetch(`/api/session/${encodeURIComponent(sessionId)}/vote`, {
                           method: "POST",
@@ -250,16 +313,48 @@ export default function RoomShell({ sessionId, sessionName, user }) {
                       } catch {}
                     }}
                     className={[
-                      "aspect-[3/4] w-12 select-none rounded-xl border-2 bg-transparent text-sm font-semibold transition",
-                      "hover:bg-indigo-600/10 dark:hover:bg-indigo-400/10",
+                      "cursor-pointer aspect-[3/4] w-12 select-none rounded-xl border-2 bg-white text-sm font-semibold shadow-sm will-change-transform transition dark:bg-gray-900",
+                      "hover:shadow-md",
                       isSel
-                        ? "border-indigo-600 bg-indigo-600 text-white dark:border-indigo-500 dark:bg-indigo-500"
-                        : "border-indigo-400 text-indigo-700 dark:border-indigo-400/70 dark:text-indigo-300",
+                        ? "border-indigo-600 ring-2 ring-indigo-400/50"
+                        : "border-black/10 dark:border-white/10",
                     ].join(" ")}
                     aria-pressed={isSel}
-                    aria-label={isCoffee ? "Coffee break" : `Vote ${v}`}
+                    aria-label={isCoffee ? "Coffee break" : isUnknown ? "Vote unknown" : `Vote ${v}`}
+                    style={{
+                      // Keep surface white; gradients only on the glyphs
+                      WebkitTapHighlightColor: "transparent",
+                    }}
                   >
-                    {isCoffee ? "☕" : v}
+                    <div className="grid h-full w-full place-items-center">
+                      {isCoffee ? (
+                        <svg viewBox="0 0 64 64" className="h-7 w-7" aria-hidden>
+                          <defs>
+                            <linearGradient id={`mug_${v}`} x1="0%" y1="0%" x2="100%" y2="100%">
+                              <stop offset="0%" stopColor={g1} />
+                              <stop offset="100%" stopColor={g2} />
+                            </linearGradient>
+                          </defs>
+                          <g fill={`url(#mug_${v})`}>
+                            <rect x="12" y="26" rx="4" ry="4" width="28" height="18" />
+                            <path d="M42 30h6a6 6 0 0 1 0 12h-6v-4h6a2 2 0 0 0 0-4h-6z" />
+                          </g>
+                          <g stroke={`url(#mug_${v})`} strokeWidth="2" fill="none">
+                            <path d="M22 18c0 3-3 3-3 6 0 2 2 3 2 5" />
+                            <path d="M28 18c0 3-3 3-3 6 0 2 2 3 2 5" />
+                          </g>
+                        </svg>
+                      ) : (
+                        <span
+                          className="text-[18px] font-extrabold leading-none bg-clip-text text-transparent"
+                          style={{
+                            backgroundImage: `linear-gradient(135deg, ${g1}, ${g2})`,
+                          }}
+                        >
+                          {v}
+                        </span>
+                      )}
+                    </div>
                   </button>
                 );
               })}
