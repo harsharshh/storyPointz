@@ -409,6 +409,75 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
     return coolWarmPairs[idx] || coolWarmPairs[coolWarmPairs.length - 1];
   };
 
+  // ---- Results math (exclude spectators and non-numeric like '?' or '☕') ----
+  const eligibleVotes = useMemo(() => {
+    const entries = Object.entries(votes || {}).filter(([uid, val]) => {
+      if (!val) return false;
+      if (spectators[uid]) return false; // exclude spectators
+      return numericValues.includes(String(val));
+    });
+    return entries.map(([, val]) => Number(String(val)));
+  }, [votes, spectators]);
+
+  const averageVote = useMemo(() => {
+    if (!eligibleVotes.length) return null;
+    const sum = eligibleVotes.reduce((a, b) => a + b, 0);
+    return +(sum / eligibleVotes.length).toFixed(1);
+  }, [eligibleVotes]);
+
+  const perCardCounts = useMemo(() => {
+    const m = new Map();
+    eligibleVotes.forEach((n) => m.set(n, (m.get(n) || 0) + 1));
+    return numericValues
+      .map((v) => Number(v))
+      .filter((n) => m.has(n))
+      .map((n) => ({ n, c: m.get(n) }));
+  }, [eligibleVotes]);
+
+  const agreement = useMemo(() => {
+    const total = eligibleVotes.length;
+    if (!total) return { pct: 0, top: null };
+    const freq = new Map();
+    let top = null, topC = 0;
+    eligibleVotes.forEach((n) => {
+      const c = (freq.get(n) || 0) + 1;
+      freq.set(n, c);
+      if (c > topC) { topC = c; top = n; }
+    });
+    const pct = Math.round((topC / total) * 100);
+    return { pct, top };
+  }, [eligibleVotes]);
+
+  // Tiny pie for agreement visual (color maps: 0% = red, 50% = yellow, 100% = green)
+  const MiniPie = ({ pct = 0 }) => {
+    const clamped = Math.max(0, Math.min(100, pct));
+    const R = 18; 
+    const C = 2 * Math.PI * R; 
+    const dash = (clamped / 100) * C;
+    // Hue from 0 (red) → 120 (green)
+    const hue = Math.round((clamped / 100) * 120);
+    const strokeCol = `hsl(${hue} 90% 50%)`;
+
+    return (
+      <svg viewBox="0 0 48 48" className="h-10 w-10">
+        {/* base track */}
+        <circle cx="24" cy="24" r={R} stroke="currentColor" strokeOpacity="0.15" strokeWidth="6" fill="none" />
+        {/* active arc colored by agreement */}
+        <circle
+          cx="24"
+          cy="24"
+          r={R}
+          stroke={strokeCol}
+          strokeWidth="6"
+          strokeLinecap="round"
+          fill="none"
+          strokeDasharray={`${dash} ${C - dash}`}
+          transform="rotate(-90 24 24)"
+        />
+      </svg>
+    );
+  };
+
   // Stable, colorful avatar gradient per user
   const userGradFor = (key) => {
     const str = String(key || "guest");
@@ -893,28 +962,111 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
         </div>
       </div>
 
-      {/* Bottom area: cards for players, banner for spectators */}
-      {isSelfSpectator ? (
+      {/* Bottom area: results when revealed; else cards or spectator banner (persisted) */}
+      {revealed ? (
+        <div className="pointer-events-auto fixed inset-x-0 bottom-0 z-30">
+          <div className="mx-auto max-w-6xl px-6 pb-6">
+            <div className="flex flex-col gap-6 p-5 ">
+              <div className="grid grid-cols-1 gap-6 sm:grid-cols-3">
+                <div className="flex items-center gap-3 justify-end">
+                  <div className="text-sm font-semibold text-gray-700 dark:text-white/80">Average:</div>
+                  {(() => {
+                    // Compute the nearest numeric card for the current average
+                    if (averageVote == null) {
+                      // fallback to plain text when no average
+                      return <div className="text-5xl font-black text-gray-900 dark:text-white">{'—'}</div>;
+                    }
+                    // Find the closest value in numericValues
+                    // Convert all to numbers for comparison
+                    const avg = Number(averageVote);
+                    const nums = numericValues.map(Number);
+                    let closest = nums[0];
+                    let minDiff = Math.abs(avg - nums[0]);
+                    for (let i = 1; i < nums.length; ++i) {
+                      const diff = Math.abs(avg - nums[i]);
+                      if (
+                        diff < minDiff ||
+                        (diff === minDiff && nums[i] > closest) // Prefer higher if tie
+                      ) {
+                        closest = nums[i];
+                        minDiff = diff;
+                      }
+                    }
+                    const [g1, g2] = gradFor(String(closest));
+                    return (
+                      <div className="text-5xl font-black text-gray-900 dark:text-white">
+                        <span
+                          className="bg-clip-text text-transparent"
+                          style={{ backgroundImage: `linear-gradient(135deg, ${g1}, ${g2})` }}
+                        >
+                          {averageVote}
+                        </span>
+                      </div>
+                    );
+                  })()}
+                </div>
+                <div className="flex items-center gap-3 justify-center">
+                  <div className="text-sm font-semibold text-gray-700 dark:text-white/80">Agreement:</div>
+                  <div className="flex items-center gap-3">
+                    <MiniPie pct={agreement.pct} />
+                    <div className="text-lg font-bold text-gray-900 dark:text-white">{agreement.pct}%</div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3 justify-start">
+                  <div className="text-sm font-semibold text-gray-700 dark:text-white/80">Voters:</div>
+                  {(() => {
+                    // Compute percentage and color
+                    const votePct = members.length ? (eligibleVotes.length / members.length) * 100 : 0;
+                    // Map 0% → red (hue 0), 50% → orange (hue 30), 100% → blue (hue 210)
+                    // Interpolate hues: red (0), orange (30), blue (210)
+                    let hue;
+                    if (votePct <= 50) {
+                      // red to orange
+                      // 0% = 0, 50% = 30
+                      hue = 0 + (30 * (votePct / 50));
+                    } else {
+                      // orange to blue
+                      // 50% = 30, 100% = 210
+                      hue = 30 + (180 * ((votePct - 50) / 50));
+                    }
+                    hue = Math.round(Math.max(0, Math.min(210, hue)));
+                    return (
+                      <div
+                        className="text-lg font-bold"
+                        style={{ color: `hsl(${hue}, 90%, 50%)` }}
+                      >
+                        {eligibleVotes.length}
+                      </div>
+                    );
+                  })()}
+                </div>
+              </div>
+              <div className="flex flex-wrap items-end gap-4 justify-center">
+                {perCardCounts.length === 0 && (
+                  <div className="text-sm text-gray-600 dark:text-white/70">No numeric votes yet.</div>
+                )}
+                {perCardCounts.map(({ n, c }) => {
+                  const [g1, g2] = gradFor(String(n));
+                  return (
+                    <div key={`res_${n}`} className="flex flex-col items-center">
+                      <div className="grid h-16 w-12 place-items-center rounded-xl border-2 border-black/10 bg-white text-sm font-extrabold dark:border-white/10 dark:bg-gray-900">
+                        <span className="bg-clip-text text-transparent" style={{ backgroundImage: `linear-gradient(135deg, ${g1}, ${g2})` }}>{n}</span>
+                      </div>
+                      <div className="mt-1 text-xs text-gray-600 dark:text-white/70">{c} Vote{c>1?'s':''}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : isSelfSpectator ? (
         <div className="pointer-events-auto fixed inset-x-0 bottom-0 z-30">
           <div className="mx-auto max-w-2xl px-6 pb-6">
             <div className="flex items-center justify-between gap-4 rounded-2xl border border-black/10 bg-white/80 p-4 shadow-sm backdrop-blur-md dark:border-white/10 dark:bg-white/5">
               <div className="flex items-center gap-3">
-                {/* Animated eye */}
-                <svg
-                  ref={spectatorEyeRef}
-                  viewBox="0 0 64 32"
-                  className="h-10 w-14 text-gray-800 dark:text-white"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden
-                >
-                  <g data-part="lid" transform="scale(1,1)">
-                    <path d="M2 16s10-14 30-14 30 14 30 14-10 14-30 14S2 16 2 16Z" fill="currentColor" opacity="0.06" />
-                    <path d="M2 16s10-14 30-14 30 14 30 14-10 14-30 14S2 16 2 16Z" />
-                  </g>
+                <svg ref={spectatorEyeRef} viewBox="0 0 64 32" className="h-10 w-14 text-gray-800 dark:text-white" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <g data-part="lid" transform="scale(1,1)"><path d="M2 16s10-14 30-14 30 14 30 14-10 14-30 14S2 16 2 16Z" fill="currentColor" opacity="0.06" /><path d="M2 16s10-14 30-14 30 14 30 14-10 14-30 14S2 16 2 16Z" /></g>
                   <circle data-part="pupil" cx="32" cy="16" r="4" fill="currentColor" />
                 </svg>
                 <div>
@@ -922,15 +1074,7 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
                   <div className="text-xs text-gray-600 dark:text-white/70">You can watch the round but can’t vote.</div>
                 </div>
               </div>
-              <button
-                onClick={() => {
-                  // Toggle spectator off via the existing app event used elsewhere
-                  window.dispatchEvent(new CustomEvent('spz:set-spectator', { detail: { spectator: false } }));
-                  try { channelRef.current?.trigger?.('client-spectator', { userId: user?.id, spectator: false }); } catch {}
-                  try { fetch(`/api/session/${encodeURIComponent(sessionId)}/spectator`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: user?.id, spectator: false }) }); } catch {}
-                }}
-                className="cursor-pointer group relative inline-flex items-center gap-2 rounded-2xl px-4 py-2 text-xs font-bold text-gray-900 transition focus:outline-none dark:text-white"
-              >
+              <button onClick={() => { window.dispatchEvent(new CustomEvent('spz:set-spectator', { detail: { spectator: false } })); try { channelRef.current?.trigger?.('client-spectator', { userId: user?.id, spectator: false }); } catch {} try { fetch(`/api/session/${encodeURIComponent(sessionId)}/spectator`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: user?.id, spectator: false }) }); } catch {} }} className="cursor-pointer group relative inline-flex items-center gap-2 rounded-2xl px-4 py-2 text-xs font-bold text-gray-900 transition focus:outline-none dark:text-white">
                 <span className="absolute inset-0 rounded-2xl bg-gradient-to-br from-indigo-500 via-cyan-400 to-emerald-400 opacity-90 [mask:linear-gradient(#000_0_0)_content-box,linear-gradient(#000_0_0)] [mask-composite:exclude] p-[2px]" />
                 <span className="relative">Deactivate</span>
               </button>
@@ -938,21 +1082,13 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
           </div>
         </div>
       ) : (
+        /* existing bottom card rail UI unchanged */
         <div className="pointer-events-none fixed inset-x-0 bottom-0 z-30">
           <div className="mx-auto max-w-6xl px-6 pb-6">
             <div className="pointer-events-auto rounded-2xl  p-4 backdrop-blur-md">
               <div className="m-4 flex items-center justify-center gap-2 text-xs font-medium text-gray-600 dark:text-white/60">      
                 <span>Choose your card</span>
-                <svg
-                  viewBox="0 0 24 24"
-                  className="h-4 w-4"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.8"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden
-                >
+                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
                   <path d="M6 9l6 6 6-6" />
                 </svg>
               </div>
@@ -962,9 +1098,11 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
                   const isCoffee = v === "☕";
                   const isUnknown = v === "?";
                   const [g1, g2] = gradFor(v);
+
                   return (
                     <button
                       key={v}
+                      key={`rail_${v}`}
                       ref={(el) => { if (el) cardRefs.current[v] = el; }}
                       onMouseEnter={() => {
                         const qt = quickLift.current[v];
@@ -994,7 +1132,7 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
                             await fetch(`/api/session/${encodeURIComponent(sessionId)}/vote`, {
                               method: "POST",
                               headers: { "Content-Type": "application/json" },
-                              body: JSON.stringify({ userId: user?.id, value: "", storyId: activeStoryId }),
+                              body: JSON.stringify({ userId: user?.id, value: "", storyId: activeStoryRef.current }),
                             });
                           } catch {}
                           return;
@@ -1019,7 +1157,7 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
                           await fetch(`/api/session/${encodeURIComponent(sessionId)}/vote`, {
                             method: "POST",
                             headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({ userId: user?.id, value: v, storyId: activeStoryId }),
+                            body: JSON.stringify({ userId: user?.id, value: v, storyId: activeStoryRef.current }),                          
                           });
                         } catch {}
                       }}
@@ -1030,13 +1168,15 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
                           ? "border-indigo-600 ring-2 ring-indigo-400/50"
                           : "border-black/10 dark:border-white/10",
                       ].join(" ")}
-                      aria-pressed={isSel}
+                      
                       aria-label={isCoffee ? "Coffee break" : isUnknown ? "Vote unknown" : `Vote ${v}`}
                       style={{
                         // Keep surface white; gradients only on the glyphs
                         WebkitTapHighlightColor: "transparent",
-                      }}
+                      }
+                    }
                     >
+                      {/* symbol */}
                       <div className="grid h-full w-full place-items-center">
                         {isCoffee ? (
                           <svg viewBox="0 0 64 64" className="h-7 w-7" aria-hidden>
