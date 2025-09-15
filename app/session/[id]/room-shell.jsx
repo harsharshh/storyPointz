@@ -673,8 +673,8 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
                         </div>
                       )}
                       {/* Base content stack: avatar / self value (pre-reveal) / mask / revealed value */}
-                      {/* Avatar when not voted */}
-                      {(!hasVoted) && (
+                      {/* Avatar when not voted and not locally selecting (optimistic) */}
+                      {(!hasVoted && !(isSelf && valueToShow)) && (
                         <div className="grid h-full w-full place-items-center">
                           {renderAvatar()}
                         </div>
@@ -1009,6 +1009,8 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
 
                         // Select and lift the new card
                         setSelected(v);
+                        // Optimistically reflect my vote locally to avoid avatar/number overlap
+                        setVotes((prev) => ({ ...(prev || {}), [user?.id]: v }));
                         lastSelected.current = v;
                         const qt = quickLift.current[v];
                         if (qt) qt(-10);
