@@ -49,10 +49,19 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
     if (revealed) setRevealTick((v) => v + 1);
   }, [revealed]);
   const [activeStoryId, setActiveStoryId] = useState(null);
+  // Edit popover state for admin editing votes
+  const [editOpen, setEditOpen] = useState(false);
+  const [editTarget, setEditTarget] = useState(null); // userId being edited
+  const [editInitial, setEditInitial] = useState(null);
+  const [editSaving, setEditSaving] = useState(false);
   const activeStoryRef = useRef(null);
   const boardRef = useRef(null);
   const patternRef = useRef(null);
   const spectatorEyeRef = useRef(null);
+  // Scramble text refs for results
+  const avgRef = useRef(null);
+  const agrPctRef = useRef(null);
+  // ---- Results math (exclude spectators and non-numeric like '?' or '☕') ----
   // Reveal countdown (3s) state/refs
   const [countdown, setCountdown] = useState(0); // 0 = idle, >0 running
   const [countText, setCountText] = useState("3");
@@ -278,6 +287,14 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
           setVotes((prev) => ({ ...prev, [payload.userId]: payload.value }));
         }
       });
+      // Handle admin edit events (realtime vote edit by admin)
+      const onAdminEdit = (payload) => {
+        if (!payload || !payload.userId) return;
+        if (typeof payload.value !== 'string') return;
+        setVotes((prev) => ({ ...prev, [payload.userId]: payload.value }));
+      };
+      channel.bind('client-admin-edit', onAdminEdit);
+      channel.bind('admin-edit', onAdminEdit);
       const onSpectator = (payload) => {
         if (!payload || !payload.userId) return;
         const flag = Boolean(payload.spectator);
@@ -448,30 +465,155 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
     return { pct, top };
   }, [eligibleVotes]);
 
-  // Tiny pie for agreement visual (color maps: 0% = red, 50% = yellow, 100% = green)
-  const MiniPie = ({ pct = 0 }) => {
+  // Scramble Average & Agreement while saving an edit; slow down before showing final
+  useEffect(() => {
+    // --- Pulse GSAP timeline for pie ring (MiniPie) during scramble ---
+    let piePulseTl = null;
+    let pieEl = null;
+    // Pulse the parent of agrPctRef (which is the <div> wrapping MiniPie and the %)
+    if (agrPctRef.current) {
+      // Find the parent node that contains the MiniPie SVG and % text.
+      // We pulse the parent <div> (className="flex items-center gap-3")
+      pieEl = agrPctRef.current.parentNode;
+    }
+    // Cleanup pulse timeline helper
+    const killPiePulse = () => {
+      if (piePulseTl) { piePulseTl.kill(); piePulseTl = null; }
+      if (pieEl) gsap.set(pieEl, { scale: 1 });
+    };
+
+    // --- Scramble logic with max 2 digits for agreement (votes are max 2-digit) ---
+    const targets = [
+      { ref: avgRef, final: averageVote == null ? '—' : String(averageVote), suffix: '', charset: '0123456789.' },
+      { ref: agrPctRef, final: `${Math.max(0, Math.min(100, agreement.pct || 0))}%`, suffix: '%', charset: '0123456789' },
+    ];
+
+    // Helper: scramble up to 2 chars for agreement pct, up to 2 for avg
+    const writeRandom = (el, final, charset, suffix) => {
+      if (!el) return;
+      // Only allow max 2 chars for scramble (since votes are at most 2 digits)
+      let base = String(final).replace('%', '');
+      let len = Math.max(1, Math.min(2, base.length));
+      let out = '';
+      for (let i = 0; i < len; i++) out += charset[Math.floor(Math.random() * charset.length)];
+      if (suffix && final.endsWith(suffix)) out += suffix;
+      el.textContent = out;
+    };
+
+    let rafId = null;
+    let stopTicker = false;
+
+    if (editSaving) {
+      // Pulse the pie ring (MiniPie) parent
+      if (pieEl) {
+        killPiePulse();
+        piePulseTl = gsap.timeline({ repeat: -1, defaults: { ease: "power1.inOut" } });
+        piePulseTl.to(pieEl, { scale: 1.08, duration: 0.18 })
+                  .to(pieEl, { scale: 1, duration: 0.18 });
+      }
+      const tick = () => {
+        if (stopTicker) return;
+        targets.forEach((t) => writeRandom(t.ref.current, t.final, t.charset, t.suffix));
+        rafId = requestAnimationFrame(tick);
+      };
+      rafId = requestAnimationFrame(tick);
+      return () => {
+        stopTicker = true;
+        if (rafId) cancelAnimationFrame(rafId);
+        killPiePulse();
+      };
+    }
+
+    // When editSaving is false, stop pulsing and ease scale back to 1
+    if (pieEl) {
+      killPiePulse();
+      gsap.to(pieEl, { scale: 1, duration: 0.24, ease: "power2.out" });
+    }
+
+    let steps = 12; // ~0.6s at 50ms
+    const interval = 50;
+    const id = setInterval(() => {
+      targets.forEach((t) => writeRandom(t.ref.current, t.final, t.charset, t.suffix));
+      steps -= 1;
+      if (steps <= 0) {
+        clearInterval(id);
+        targets.forEach((t) => { const el = t.ref.current; if (el) el.textContent = t.final; });
+      }
+    }, interval);
+    return () => {
+      clearInterval(id);
+      killPiePulse();
+    };
+  }, [editSaving, averageVote, agreement.pct]);
+
+  // Tiny pie for agreement visual
+  // Supports a masked mode that animates a decoy fill so users can't guess before reveal.
+  const MiniPie = ({ pct = 0, masked = false }) => {
     const clamped = Math.max(0, Math.min(100, pct));
-    const R = 18; 
-    const C = 2 * Math.PI * R; 
-    const dash = (clamped / 100) * C;
-    // Hue from 0 (red) → 120 (green)
-    const hue = Math.round((clamped / 100) * 120);
-    const strokeCol = `hsl(${hue} 90% 50%)`;
+    const R = 18;
+    const C = 2 * Math.PI * R;
+    const arcRef = useRef(null);
+    const tlRef = useRef(null);
+
+    // Map agreement 0→100 to hue 0 (red) → 120 (green)
+    const hueFor = (p) => Math.round((Math.max(0, Math.min(100, p)) / 100) * 120);
+
+    // Initialize track instantly
+    useEffect(() => {
+      const arc = arcRef.current;
+      if (!arc) return;
+      // kill any prior timeline
+      tlRef.current?.kill?.();
+
+      if (masked) {
+        // Decoy animation: oscillate between two low/medium fills, jittering hue a bit.
+        const startPct = 12 + Math.random() * 10;   // 12–22%
+        const endPct   = 28 + Math.random() * 12;   // 28–40%
+        const state = { p: startPct };
+        const update = () => {
+          const dash = (state.p / 100) * C;
+          arc.setAttribute('stroke-dasharray', `${dash} ${C - dash}`);
+          const hue = hueFor(20 + (state.p - startPct)); // small hue drift
+          arc.setAttribute('stroke', `hsl(${hue} 90% 50%)`);
+        };
+        update();
+        const tl = gsap.timeline({ repeat: -1, yoyo: true, defaults: { ease: 'sine.inOut' } });
+        tl.to(state, { p: endPct, duration: 1.2, onUpdate: update })
+          .to(state, { p: startPct, duration: 1.2, onUpdate: update });
+        tlRef.current = tl;
+        return () => tl.kill();
+      }
+
+      // Unmasked (revealed): smoothly animate to the true percentage
+      const state = { p: 0 };
+      const dashTo = (p) => {
+        const dash = (p / 100) * C;
+        arc.setAttribute('stroke-dasharray', `${dash} ${C - dash}`);
+        arc.setAttribute('stroke', `hsl(${hueFor(p)} 90% 50%)`);
+      };
+      // Always start from 0 so the fill grows visibly
+      state.p = 0;
+      dashTo(0);
+      const tl = gsap.to(state, { p: clamped, duration: 0.45, ease: 'power2.out', onUpdate: () => dashTo(state.p) });
+      tlRef.current = tl;
+      return () => tl.kill();
+    }, [masked, clamped]);
 
     return (
       <svg viewBox="0 0 48 48" className="h-10 w-10">
         {/* base track */}
         <circle cx="24" cy="24" r={R} stroke="currentColor" strokeOpacity="0.15" strokeWidth="6" fill="none" />
-        {/* active arc colored by agreement */}
+        {/* active arc (animated) */}
         <circle
+          ref={arcRef}
           cx="24"
           cy="24"
           r={R}
-          stroke={strokeCol}
+          stroke={`hsl(${hueFor(clamped)} 90% 50%)`}
           strokeWidth="6"
           strokeLinecap="round"
           fill="none"
-          strokeDasharray={`${dash} ${C - dash}`}
+          strokeDasharray={`0 ${C}`}
           transform="rotate(-90 24 24)"
         />
       </svg>
@@ -585,6 +727,12 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
             const rest = others.slice(2);
             const top = rest.slice(0, Math.ceil(rest.length / 2));
             const bottom = [self, ...rest.slice(Math.ceil(rest.length / 2))].filter(Boolean);
+
+            const openEdit = (uid, current) => {
+              setEditTarget(uid);
+              setEditInitial(current || votes[uid] || null);
+              setEditOpen(true);
+            };
 
             const Seat = ({ id, name, isSelf, dashed }) => {
               const votedVal = votes[id];
@@ -712,14 +860,14 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
               return (
                 <div className="relative flex flex-col items-center gap-2">
                   <div className="relative isolate">
-                    {isSelf && selected && (
+                    {isSelf && isRevealed && hasVoted && (
                       <button
                         type="button"
-                        className="absolute -top-3 -left-3 z-40 grid h-7 w-7 place-items-center rounded-full bg-indigo-500 text-white shadow ring-2 ring-white will-change-transform dark:ring-[#0f1115]"
-                         title="Edit name"
-                         aria-label="Edit name"
-                         onClick={() => window.dispatchEvent(new CustomEvent('spz:edit-name'))}
-                       >
+                        className="cursor-pointer absolute -top-3 -left-3 z-40 grid h-7 w-7 place-items-center rounded-full bg-indigo-500 text-white shadow ring-2 ring-white will-change-transform dark:ring-[#0f1115]"
+                        title="Edit vote"
+                        aria-label="Edit vote"
+                        onClick={() => openEdit(id, votedVal)}
+                      >
                         <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                           <path d="M12 20h9" />
                           <path d="M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4Z" />
@@ -962,19 +1110,129 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
         </div>
       </div>
 
+      {/* Edit vote popover */}
+      {editOpen && (
+        <div
+          className="fixed inset-0 z-[100] grid place-items-center bg-black/30 backdrop-blur-sm dark:bg-black/50"
+          onClick={() => setEditOpen(false)}
+        >
+          <div
+            className="relative w-[min(92vw,700px)] rounded-3xl border border-black/10 bg-white p-6 shadow-xl dark:border-white/10 dark:bg-gray-900"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              onClick={() => setEditOpen(false)}
+              className="absolute right-3 top-3 grid h-8 w-8 place-items-center rounded-full text-gray-500 hover:bg-black/5 hover:text-gray-700 focus:outline-none dark:text-white/70 dark:hover:bg-white/10"
+              aria-label="Close"
+            >
+              <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+            </button>
+            <div className="mb-4 text-lg font-bold text-gray-900 dark:text-white">Edit vote</div>
+
+            <div className="grid grid-cols-4 gap-6 sm:grid-cols-6">
+              {values.map((v) => {
+                const isSel = String(editInitial) === String(v);
+                const isCoffee = v === '☕';
+                const isUnknown = v === '?';
+                const [g1, g2] = gradFor(v);
+                return (
+                  <button
+                    key={`edit_${v}`}
+                    type="button"
+                    onClick={async () => {
+                      // Optimistic local apply
+                      if (editTarget) {
+                        setVotes((prev) => ({ ...(prev || {}), [editTarget]: String(v) }));
+                      }
+                      setEditSaving(true);
+                      setEditOpen(false);
+                      // Broadcast + persist
+                      try { channelRef.current?.trigger?.('client-admin-edit', { userId: editTarget, value: String(v) }); } catch {}
+                      try {
+                        await fetch(`/api/session/${encodeURIComponent(sessionId)}/vote`, {
+                          method: 'POST', headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ userId: editTarget, value: String(v), storyId: activeStoryRef.current })
+                        });
+                      } catch {}
+                      setEditSaving(false);
+                    }}
+                    className={[
+                      'group relative grid h-14 w-14 place-items-center rounded-2xl border-2 bg-white text-sm font-bold shadow-sm transition cursor-pointer dark:bg-gray-900',
+                      isSel
+                        ? 'border-indigo-500 ring-2 ring-indigo-400/40'
+                        : 'border-black/10 dark:border-white/10 hover:shadow-md hover:border-indigo-300 hover:scale-[1.03]'
+                    ].join(' ')}
+                    aria-label={isCoffee ? 'Coffee' : isUnknown ? 'Unknown' : `Set to ${v}`}
+                  >
+                    {isCoffee ? (
+                      <svg viewBox="0 0 64 64" className="h-7 w-7" aria-hidden>
+                        <defs>
+                          <linearGradient id={`edit_mug_${v}`} x1="0%" y1="0%" x2="100%" y2="100%">
+                            <stop offset="0%" stopColor={g1} />
+                            <stop offset="100%" stopColor={g2} />
+                          </linearGradient>
+                        </defs>
+                        <g fill={`url(#edit_mug_${v})`}>
+                          <rect x="12" y="26" rx="4" ry="4" width="28" height="18" />
+                          <path d="M42 30h6a6 6 0 0 1 0 12h-6v-4h6a2 2 0 0 0 0-4h-6z" />
+                        </g>
+                        <g stroke={`url(#edit_mug_${v})`} strokeWidth="2" fill="none">
+                          <path d="M22 18c0 3-3 3-3 6 0 2 2 3 2 5" />
+                          <path d="M28 18c0 3-3 3-3 6 0 2 2 3 2 5" />
+                        </g>
+                      </svg>
+                    ) : (
+                      <span
+                        className="text-[18px] font-extrabold leading-none bg-clip-text text-transparent"
+                        style={{ backgroundImage: `linear-gradient(135deg, ${g1}, ${g2})` }}
+                      >
+                        {isUnknown ? '?' : v}
+                      </span>
+                    )}
+                    {isSel && (
+                      <span className="pointer-events-none absolute inset-0 rounded-2xl bg-indigo-500/5" />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {editSaving && (
+        <div className="fixed top-3 left-1/2 z-[110] -translate-x-1/2">
+          <div className="flex items-center gap-2 rounded-xl bg-white/90 px-3 py-1.5 text-xs font-semibold text-gray-800 shadow dark:bg-gray-900/90 dark:text-white">
+            <svg className="h-4 w-4 animate-spin text-indigo-600 dark:text-indigo-400" viewBox="0 0 24 24" fill="none" aria-hidden>
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-90" d="M4 12a8 8 0 0 1 8-8" stroke="currentColor" strokeWidth="4" strokeLinecap="round" />
+            </svg>
+            Updating…
+          </div>
+        </div>
+      )}
+
       {/* Bottom area: results when revealed; else cards or spectator banner (persisted) */}
       {revealed ? (
         <div className="pointer-events-auto fixed inset-x-0 bottom-0 z-30">
           <div className="mx-auto max-w-6xl px-6 pb-6">
             <div className="flex flex-col gap-6 p-5 ">
-              <div className="grid grid-cols-1 gap-6 sm:grid-cols-3">
-                <div className="flex items-center gap-3 justify-end">
+              <div className="grid grid-cols-1 gap-6 sm:grid-cols-3" style={{ width: '50%', alignSelf: 'center' }}>
+                <div className="block items-center gap-3 text-center">
                   <div className="text-sm font-semibold text-gray-700 dark:text-white/80">Average:</div>
                   {(() => {
                     // Compute the nearest numeric card for the current average
                     if (averageVote == null) {
                       // fallback to plain text when no average
-                      return <div className="text-5xl font-black text-gray-900 dark:text-white">{'—'}</div>;
+                      // Use scramble ref
+                      return <div className="text-5xl font-black text-gray-900 dark:text-white p-3">
+                        <span
+                          ref={avgRef}
+                          
+                        >
+                          {'-'}
+                        </span>
+                      </div>;
                     }
                     // Find the closest value in numericValues
                     // Convert all to numbers for comparison
@@ -994,8 +1252,9 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
                     }
                     const [g1, g2] = gradFor(String(closest));
                     return (
-                      <div className="text-5xl font-black text-gray-900 dark:text-white">
+                      <div className="text-5xl font-black text-gray-900 dark:text-white p-3">
                         <span
+                          ref={avgRef}
                           className="bg-clip-text text-transparent"
                           style={{ backgroundImage: `linear-gradient(135deg, ${g1}, ${g2})` }}
                         >
@@ -1005,15 +1264,15 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
                     );
                   })()}
                 </div>
-                <div className="flex items-center gap-3 justify-center">
+                <div className="block items-center gap-3 text-center">
                   <div className="text-sm font-semibold text-gray-700 dark:text-white/80">Agreement:</div>
-                  <div className="flex items-center gap-3">
-                    <MiniPie pct={agreement.pct} />
-                    <div className="text-lg font-bold text-gray-900 dark:text-white">{agreement.pct}%</div>
+                  <div className="flex items-center gap-3 justify-center p-3">
+                    <MiniPie pct={agreement.pct} masked={false} />
+                    <div style={{width: '3rem'}} className="text-lg font-bold text-gray-900 dark:text-white"><span ref={agrPctRef}>{agreement.pct}%</span></div>
                   </div>
                 </div>
-                <div className="flex items-center gap-3 justify-start">
-                  <div className="text-sm font-semibold text-gray-700 dark:text-white/80">Voters:</div>
+                <div className="block items-center gap-3 text-center">
+                  <div className="text-sm font-semibold text-gray-700 dark:text-white/80 p-3">Voters:</div>
                   {(() => {
                     // Compute percentage and color
                     const votePct = members.length ? (eligibleVotes.length / members.length) * 100 : 0;
