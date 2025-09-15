@@ -745,22 +745,34 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
               const valueRef = useRef(null);
               const cardRootRef = useRef(null);
 
-              // Creamy-smooth reveal: gently blur+fade mask out, ease value in with slight lift
+              // Track whether this seat has already run its first-time reveal animation this round
+              const didRevealRef = useRef(false);
+
+              // Creamy-smooth reveal on first reveal only; skip fade-in during edits/recalc
               useEffect(() => {
                 const maskEl = maskRef.current;
                 const valEl = valueRef.current;
                 const cardEl = cardRootRef.current;
 
                 const ctx = gsap.context(() => {
-                  // Reset when not revealed or no vote
+                  // Reset when not revealed or no vote; also reset the first-reveal flag
                   if (!isRevealed || !hasVoted) {
+                    didRevealRef.current = false;
                     if (maskEl) gsap.set(maskEl, { opacity: (hasVoted && !isSelf) ? 1 : 0, filter: 'blur(0px)' });
                     if (valEl) gsap.set(valEl, { opacity: (isSelf && valueToShow && !isRevealed) ? 1 : 0, y: 0, scale: 1 });
                     if (cardEl) gsap.set(cardEl, { scale: 1 });
                     return;
                   }
 
-                  // When revealed: fade/blur mask out and bring value in with subtle lift
+                  // Already revealed: if we're editing/saving or we've already animated once, just ensure visible state without any fade-in
+                  if (isRevealed && hasVoted && (editSaving || didRevealRef.current)) {
+                    if (maskEl) gsap.set(maskEl, { opacity: 0, filter: 'blur(0px)' });
+                    if (valEl) gsap.set(valEl, { opacity: 1, y: 0, scale: 1 });
+                    if (cardEl) gsap.set(cardEl, { scale: 1 });
+                    return;
+                  }
+
+                  // First-time reveal animation (only once per round per seat)
                   if (hasVoted) {
                     const tl = gsap.timeline({ defaults: { overwrite: true } });
                     if (!isSelf && maskEl) {
@@ -776,7 +788,7 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
                       tl.fromTo(valEl,
                         { opacity: 0, y: 8, scale: 0.985, willChange: 'transform,opacity' },
                         { opacity: 1, y: 0, scale: 1, duration: 0.50, ease: 'power3.out', force3D: true },
-                        0.18 // tiny overlap for creaminess
+                        0.18
                       );
                     }
                     if (cardEl) {
@@ -786,11 +798,12 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
                         0
                       );
                     }
+                    tl.add(() => { didRevealRef.current = true; });
                     return () => tl.kill();
                   }
                 });
                 return () => ctx.revert();
-              }, [isRevealed, hasVoted, isSelf, valueToShow]);
+              }, [isRevealed, hasVoted, isSelf, valueToShow, editSaving]);
 
               const renderGlyph = (v) => {
                 if (!v) return null;
