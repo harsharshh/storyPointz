@@ -863,15 +863,23 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
                     {isSelf && isRevealed && hasVoted && (
                       <button
                         type="button"
+                        disabled={editSaving}
                         className="cursor-pointer absolute -top-3 -left-3 z-40 grid h-7 w-7 place-items-center rounded-full bg-indigo-500 text-white shadow ring-2 ring-white will-change-transform dark:ring-[#0f1115]"
                         title="Edit vote"
                         aria-label="Edit vote"
-                        onClick={() => openEdit(id, votedVal)}
+                        onClick={() => { if (!editSaving) openEdit(id, votedVal); }}
                       >
+                      {editSaving ? (
+                        <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden>
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-90" d="M4 12a8 8 0 0 1 8-8" stroke="currentColor" strokeWidth="4" strokeLinecap="round" />
+                        </svg>
+                      ) : (
                         <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                           <path d="M12 20h9" />
                           <path d="M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4Z" />
                         </svg>
+                      )}
                       </button>
                     )}
                     <div
