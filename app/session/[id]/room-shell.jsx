@@ -1101,7 +1101,6 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
 
                   return (
                     <button
-                      key={v}
                       key={`rail_${v}`}
                       ref={(el) => { if (el) cardRefs.current[v] = el; }}
                       onMouseEnter={() => {
