@@ -1,6 +1,19 @@
 "use client";
 
 import React from "react";
+import { createPortal } from "react-dom";
+
+// Planning poker numeric options for setting story points quickly
+const NUMERIC_OPTIONS = [0, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89] as const;
+
+// Helper: map any average to the immediate higher (ceiling) option in NUMERIC_OPTIONS
+const ceilOptionFor = (avg?: number | null) => {
+  if (typeof avg !== 'number' || Number.isNaN(avg)) return null;
+  for (const n of NUMERIC_OPTIONS) {
+    if (avg <= n) return n;
+  }
+  return NUMERIC_OPTIONS[NUMERIC_OPTIONS.length - 1];
+};
 
 type StoriesDrawerProps = {
   open: boolean;
@@ -129,7 +142,7 @@ function StoriesList({ sessionId, initial }: { sessionId?: string; initial: Arra
         </div>
       )}
       {!adding ? (
-        <button onClick={() => setAdding(true)} className="cursor-pointer mt-2 inline-flex w-full items-center justify-start gap-2 rounded-2xl border border-black/10 bg-white/70 px-4 py-3 text-sm font-semibold text-gray-900 backdrop-blur hover:bg-white/90 dark:border-white/10 dark:bg-white/10 dark:text-white ">
+        <button onClick={() => setAdding(true)} className="cursor-pointer mt-2 inline-flex w-full items-center justify-start gap-2 rounded-2xl border border-black/10 bg-white/70 px-4 py-3 text-sm font-semibold text-gray-900 backdrop-blur hover:bg-white/90 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-gray-900">
           <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
           Add another story
         </button>
@@ -189,9 +202,66 @@ function StoryCard({ story, sessionId, onUpdated, onDeleted, isActive, onSelectA
   const [draft, setDraft] = React.useState(story.title);
   const [saving, setSaving] = React.useState(false);
   const [deleting, setDeleting] = React.useState(false);
+  const [avgOpen, setAvgOpen] = React.useState(false);
+  const popRef = React.useRef<HTMLDivElement | null>(null);
+  const btnRef = React.useRef<HTMLButtonElement | null>(null);
+  const [popPos, setPopPos] = React.useState<{top:number; left:number; width:number}>({top:0,left:0,width:224});
+  const selectedOpt = ceilOptionFor(story.avg ?? null);
+
+  React.useEffect(() => {
+    if (!avgOpen) return;
+    function onDocClick(e: MouseEvent) {
+      const t = e.target as Node | null;
+      if (popRef.current && !popRef.current.contains(t) && btnRef.current && !btnRef.current.contains(t)) {
+        setAvgOpen(false);
+      }
+    }
+    function onEsc(e: KeyboardEvent) {
+      if (e.key === 'Escape') setAvgOpen(false);
+    }
+    function place() {
+      if (!btnRef.current) return;
+      const r = btnRef.current.getBoundingClientRect();
+      const width = 224; // w-56
+      const gap = 8;
+      const left = Math.max(8, Math.min(window.innerWidth - width - 8, r.right - width));
+      const top = Math.min(window.innerHeight - 8, r.bottom + gap);
+      setPopPos({ top, left, width });
+    }
+    document.addEventListener('mousedown', onDocClick);
+    document.addEventListener('keydown', onEsc);
+    place();
+    window.addEventListener('resize', place);
+    window.addEventListener('scroll', place, true);
+    return () => {
+      window.removeEventListener('resize', place);
+      window.removeEventListener('scroll', place, true);
+      document.removeEventListener('mousedown', onDocClick);
+      document.removeEventListener('keydown', onEsc);
+    };
+  }, [avgOpen]);
+
+  async function setPoints(newAvg: number){
+    if (!sessionId) return;
+    try {
+      // Optimistic UI update
+      onUpdated({ ...story, avg: newAvg });
+      const res = await fetch(`/api/session/${encodeURIComponent(sessionId)}/stories`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ storyId: story.id, avg: newAvg }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        onUpdated(data.story ?? { ...story, avg: newAvg });
+      }
+    } finally {
+      setAvgOpen(false);
+    }
+  }
 
   return (
-    <div className="rounded-2xl border border-black/10 bg-white/70 p-4 text-gray-900 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/5 dark:text-white">
+    <div className="relative z-auto rounded-2xl border border-black/10 bg-white/70 p-4 text-gray-900 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/5 dark:text-white dark:hover:bg-gray-900 hover:bg-white/60">
       <div className="mb-2 flex items-center justify-between text-sm font-semibold opacity-80">
         <span className="text-gray-700 dark:text-white/80">{story.key}</span>
         <div className="relative">
@@ -234,12 +304,57 @@ function StoryCard({ story, sessionId, onUpdated, onDeleted, isActive, onSelectA
               </button>
             )}
             <div className="flex items-center gap-2">
-              {typeof story.avg === 'number'? (
-                <button className="cursor-pointer inline-grid h-8 w-8 place-items-center rounded-lg border border-black/10 text-gray-700 hover:bg-black/5 dark:border-white/10 dark:text-white/80 dark:hover:bg-white/10">{story.avg || '-'}</button>
-              ): (
-                <button className="cursor-pointer inline-grid h-8 w-8 place-items-center rounded-lg border border-black/10 text-gray-700 hover:bg-black/5 dark:border-white/10 dark:text-white/80 dark:hover:bg-white/10">{'-'}</button>
-              )}
-              
+              {/* points quick-set popover trigger */}
+              <div className="relative">
+                {typeof story.avg === 'number' ? (
+                  <button
+                    ref={btnRef}
+                    onClick={() => setAvgOpen(v => !v)}
+                    className="cursor-pointer inline-grid h-12 w-14 place-items-center rounded-lg border border-black/10 text-gray-700 hover:bg-black/5 dark:border-white/10 dark:text-white/80 dark:hover:bg-white/10"
+                    title="Set points"
+                  >
+                    {selectedOpt ?? '-'}
+                  </button>
+                ) : (
+                  <button
+                    ref={btnRef}
+                    onClick={() => setAvgOpen(v => !v)}
+                    className="cursor-pointer inline-grid h-12 w-14 place-items-center rounded-lg border border-black/10 text-gray-700 hover:bg-black/5 dark:border-white/10 dark:text-white/80 dark:hover:bg-white/10"
+                    title="Set points"
+                  >
+                    {selectedOpt ?? '-'}
+                  </button>
+                )}
+                {avgOpen && typeof window !== 'undefined' && createPortal(
+                  <div
+                    ref={popRef}
+                    className="fixed z-[9999] w-56 rounded-xl border border-black/10 bg-white p-2 shadow-2xl backdrop-blur supports-[backdrop-filter]:bg-white/80 dark:border-white/10 dark:bg-[#111217]"
+                    style={{ top: popPos.top, left: popPos.left }}
+                  >
+                    <div className="mb-1 px-1 text-xs font-semibold text-gray-500 dark:text-white/60">Set points</div>
+                    <div className="grid grid-cols-5 gap-2">
+                      {NUMERIC_OPTIONS.map((n) => {
+                        const active = selectedOpt === n;
+                        return (
+                          <button
+                            key={`avg_${n}`}
+                            onClick={() => setPoints(n)}
+                            className={[
+                              "cursor-pointer h-9 rounded-lg border text-sm font-semibold transition",
+                              active
+                                ? "border-indigo-500 bg-indigo-50 text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-300"
+                                : "border-black/10 hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/10 text-gray-800 dark:text-white/80",
+                            ].join(" ")}
+                          >
+                            {n}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>,
+                  document.body
+                )}
+              </div>
             </div>
           </div>
         </>
