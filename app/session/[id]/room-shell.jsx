@@ -303,6 +303,14 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
           setVotes((prev) => ({ ...prev, [payload.userId]: payload.value }));
         }
       });
+      channel.bind('story-avg', (payload) => {
+        if (!payload || !payload.storyId) return;
+        const avgValue = typeof payload.avg === 'number' ? payload.avg : null;
+        const manualFlag = payload?.manual === true;
+        try {
+          window.dispatchEvent(new CustomEvent('spz:story-avg', { detail: { sessionId, storyId: payload.storyId, avg: avgValue, manual: manualFlag } }));
+        } catch {}
+      });
       // Handle admin edit events (realtime vote edit by admin)
       const onAdminEdit = (payload) => {
         if (!payload || !payload.userId) return;
@@ -452,7 +460,7 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
         try {
           // Notify any open drawers to update this story's average immediately (no refresh needed)
           window.dispatchEvent(new CustomEvent('spz:story-avg', {
-            detail: { sessionId, storyId: activeStoryId, avg: updatedAvg }
+            detail: { sessionId, storyId: activeStoryId, avg: updatedAvg, manual: false }
           }));
         } catch {}
       }
