@@ -357,7 +357,7 @@ type StoryCardProps = {
   story: Story;
   sessionId?: string;
   onUpdated: (story: Story) => void;
-  onDeleted: (id: string) => (() => void) | void;
+  onDeleted: (id: string) => (() => void) | undefined;
   isActive?: boolean;
   awaitingResult?: boolean;
   onSelectActive?: () => void;
@@ -459,7 +459,7 @@ function StoryCard({ story, sessionId, onUpdated, onDeleted, isActive, awaitingR
                 onClick={async () => {
                   if (!sessionId || deleting) return;
                   setDeleting(true);
-                  let rollback: (() => void) | void;
+                  let rollback: (() => void) | undefined;
                   try {
                     rollback = onDeleted(story.id);
                     const res = await fetch(`/api/session/${encodeURIComponent(sessionId)}/stories`, {
