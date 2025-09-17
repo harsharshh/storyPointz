@@ -453,7 +453,7 @@ function StoryCard({ story, sessionId, onUpdated, onDeleted, isActive, awaitingR
         <div className="relative">
           <button onClick={()=> setMenu((v)=>!v)} className="cursor-pointer inline-grid h-8 w-8 place-items-center rounded-lg border border-black/10 text-gray-700 hover:bg-black/5 dark:border-white/10 dark:text-white/80 dark:hover:bg-white/10" title="Menu">•••</button>
           {menu && (
-            <div className="absolute right-0 z-10 mt-1 w-44 overflow-hidden rounded-xl border border-black/10 bg-white shadow-lg dark:border-white/10 dark:bg-[#111217]">
+            <div className="absolute right-0 z-50 mt-1 w-44 overflow-hidden rounded-xl border border-black/10 bg-white shadow-[0_12px_30px_rgba(15,23,42,0.22)] dark:border-white/10 dark:bg-[#111217]">
               <button onClick={()=> { setEditing(true); setMenu(false); }} className="block w-full px-3 py-2 text-left text-sm text-gray-800 hover:bg-black/5 dark:text-white/90 dark:hover:bg-white/10">Edit story</button>
               <button
                 onClick={async () => {
@@ -505,7 +505,7 @@ function StoryCard({ story, sessionId, onUpdated, onDeleted, isActive, awaitingR
             >
               {buttonLabel}
             </button>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2" style={{zIndex: '-1'}}>
               {/* points quick-set popover trigger */}
               <div className="relative">
                 {typeof story.avg === 'number' ? (
