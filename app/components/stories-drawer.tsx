@@ -81,10 +81,32 @@ function StoriesList({ sessionId, initial }: { sessionId?: string; initial: Stor
   const [activeId, setActiveId] = React.useState<string | null>(null);
   const [userSelectedActive, setUserSelectedActive] = React.useState(false);
   const [awaitingResult, setAwaitingResult] = React.useState(false);
+  const previousSessionRef = React.useRef<string | undefined>(undefined);
+
+  React.useEffect(() => {
+    if (typeof window === 'undefined') {
+      previousSessionRef.current = sessionId || undefined;
+      return;
+    }
+    const prev = previousSessionRef.current;
+    if (prev && prev !== sessionId) {
+      storiesCache.delete(prev);
+      try { localStorage.removeItem(`spz_active_story_${prev}`); } catch {}
+    }
+    previousSessionRef.current = sessionId || undefined;
+  }, [sessionId]);
+  React.useEffect(() => {
+    setStories(initial);
+  }, [initial, sessionId]);
+
+  
 
   // seed from cache instantly, then fetch fresh
   React.useEffect(() => {
-    if (!sessionId) return;
+    if (!sessionId) {
+      setStories(initial);
+      return;
+    }
     const cached = storiesCache.get(sessionId);
     if (cached && cached.length) setStories(cached);
     // show loader while refreshing
@@ -99,7 +121,7 @@ function StoriesList({ sessionId, initial }: { sessionId?: string; initial: Stor
       } catch {}
       finally { setLoading(false); }
     })();
-  }, [sessionId]);
+  }, [sessionId, initial]);
 
   // initialize active story when drawer opens
   React.useEffect(() => {
