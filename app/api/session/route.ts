@@ -7,6 +7,19 @@ export async function POST(req: Request) {
     const session = await prisma.session.create({
       data: { name: name?.toString()?.trim() || "Untitled Session" },
     });
+    // Create a default story for this session so voting can attach to it
+    try {
+      await prisma.story.create({
+        data: {
+          key: "S-1",
+          title: "Untitled",
+          sessionId: session.id,
+        },
+      });
+    } catch (e) {
+      // ignore story create errors to not block session creation
+      console.error("default story create failed", e);
+    }
     return NextResponse.json({ sessionId: session.id });
   } catch (e) {
     console.error("Create session failed:", e);

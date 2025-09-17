@@ -4,6 +4,7 @@ import Link from 'next/link';
 import gsap from 'gsap';
 import { useGSAP } from '@gsap/react';
 import { useRef } from 'react';
+import { burstConfetti } from './confetti-burst';
 import type { CSSProperties } from 'react';
 
 const palette: [string, string][] = [
@@ -35,13 +36,6 @@ export default function Hero() {
       data-anim="hero"
       aria-labelledby="hero-title"
     >
-      {/* Background accents (switch with theme) */}
-      <div className="pointer-events-none absolute inset-0 -z-10">
-        {/* Light mode gradient background */}
-        <div className="absolute inset-0 bg-gradient-to-br from-indigo-100 via-emerald-50 to-white dark:hidden" />
-        {/* Dark mode gradient background */}
-        <div className="absolute inset-0 hidden dark:block bg-[radial-gradient(60%_40%_at_50%_0%,rgba(109,93,246,0.35),transparent_70%),radial-gradient(40%_40%_at_100%_60%,rgba(34,197,94,0.25),transparent_70%),linear-gradient(to_bottom,#0B0B10,rgba(11,11,16,0.85))]" />
-      </div>
 
       <div className="mx-auto grid max-w-6xl grid-cols-1 items-center justify-center gap-10 px-6 py-14 sm:py-20 md:grid-cols-2 min-h-screen">
         {/* Left content */}
@@ -55,14 +49,8 @@ export default function Hero() {
           </h1>
 
           <p data-anim="hero-item" className="mt-5 max-w-prose text-base text-gray-600 dark:text-white/80">
-            Plan poker made easy—private votes, instant reveal, quick consensus.
+            Planning poker made easy, private votes, instant reveal, quick consensus.
           </p>
-
-          {/* <ul className="mt-6 space-y-2 text-sm text-gray-600 dark:text-white/70">
-            <li className="flex items-center gap-2"><Dot/> Real‑time rooms with private votes</li>
-            <li className="flex items-center gap-2"><Dot/> Fibonacci / T‑shirt / custom decks</li>
-            <li className="flex items-center gap-2"><Dot/> Consensus, average & notes history</li>
-          </ul> */}
 
           <div data-anim="hero-item" className="mt-8 flex flex-col gap-3 sm:flex-row">
             <Link
@@ -157,34 +145,8 @@ function HeroDeckVisual() {
         ease: 'power2.out',
       }, '>-0.2')
       .add(() => {
-        // Confetti burst (sparingly)
-        const colors = ['#6366f1', '#22c55e', '#f59e0b', '#ef4444', '#a855f7'];
-        const count = 36;
-        for (let i = 0; i < count; i++) {
-          const s = document.createElement('span');
-          s.className = 'spz-confetti pointer-events-none absolute rounded-full';
-          const size = 4 + Math.random() * 6;
-          s.style.width = `${size}px`;
-          s.style.height = `${size}px`;
-          s.style.background = colors[Math.floor(Math.random() * colors.length)];
-          s.style.left = '50%';
-          s.style.top = '50%';
-          host.appendChild(s);
-
-          const angle = Math.random() * Math.PI * 2;
-          const distance = 80 + Math.random() * 160;
-          const dx = Math.cos(angle) * distance;
-          const dy = Math.sin(angle) * distance;
-
-          gsap.to(s, {
-            x: dx,
-            y: dy,
-            rotate: Math.random() * 720 - 360,
-            opacity: 0,
-            duration: 1.2,
-            ease: 'power2.out',
-            onComplete: () => s.remove(),
-          });
+        if (host) {
+          burstConfetti(host, { count: 36 });
         }
       })
       .to(cards, {
