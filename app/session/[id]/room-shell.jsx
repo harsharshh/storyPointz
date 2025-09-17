@@ -135,7 +135,7 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
         setVotes((p) => { const n = { ...p }; delete n[user.id]; return n; });
         try { channelRef.current?.trigger?.('client-clear-my-vote', { userId: user.id }); } catch {}
         // server fallback to broadcast a clear
-        try { fetch(`/api/session/${encodeURIComponent(sessionId)}/vote`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: user.id, value: "", storyId: activeStoryRef.current }) }); } catch {}
+        try { fetch(`/api/session/${encodeURIComponent(sessionId)}/vote`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(buildVoteBody(user.id, "")) }); } catch {}
       }
       try { channelRef.current?.trigger?.('client-spectator', { userId: user.id, spectator: flag }); } catch {}
       // server fallback for reliability
@@ -146,6 +146,13 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
   }, [user?.id, sessionId]);
 
   // Mask overlays are static; no animation needed
+  // Helper: build vote payload so we only attach storyId when an active story exists
+  const buildVoteBody = (userId, value) => {
+    const body = { userId, value };
+    const sid = activeStoryRef.current; // ref stays fresh across renders
+    if (sid) body.storyId = sid;
+    return body;
+  };
 
   async function copyInviteLink() {
     try {
@@ -218,7 +225,7 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
               await fetch(`/api/session/${encodeURIComponent(sessionId)}/vote`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ userId: user?.id, value: val, storyId: activeStoryRef.current }),
+                body: JSON.stringify(buildVoteBody(user?.id, val)),
               });
             } catch {}
           })();
@@ -1190,7 +1197,7 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
                       try {
                         await fetch(`/api/session/${encodeURIComponent(sessionId)}/vote`, {
                           method: 'POST', headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ userId: editTarget, value: String(v), storyId: activeStoryRef.current })
+                          body: JSON.stringify(buildVoteBody(editTarget, String(v)))
                         });
                       } catch {}
                       setEditSaving(false);
