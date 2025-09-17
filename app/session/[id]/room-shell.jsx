@@ -691,7 +691,7 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
 
   // Floating SVG numbers moved to separate component
 
-  const noVotesYet = !selected && Object.keys(votes || {}).length === 0 && !revealed;
+  const noVotesYet = !selectedRef.current && Object.keys(votes || {}).length === 0 && !revealed;
 
   const textureStyleFor = (key) => {
     const rnd = seededRng(key);
