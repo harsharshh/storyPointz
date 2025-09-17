@@ -16,17 +16,25 @@ const palette: [string, string][] = [
   ];
 
 export default function Hero() {
-   
   const container = useRef<HTMLDivElement | null>(null);
+  const heroTimeline = useRef<gsap.core.Timeline | null>(null);
+
   useGSAP(() => {
-    const items = gsap.utils.toArray<HTMLElement>('[data-anim="hero-item"]');
-    if (items.length) {
-      gsap.from(items, { y: 24, opacity: 0, duration: 0.6, ease: 'power2.out', stagger: 0.08 });
-    }
-    const cards = gsap.utils.toArray<HTMLElement>('[data-anim="card-item"]');
-    if (cards.length) {
-      gsap.from(cards, { y: 16, opacity: 0, duration: 0.5, ease: 'power2.out', stagger: 0.05, delay: 0.2 });
-    }
+    const elements = gsap.utils.toArray<HTMLElement>('[data-anim="hero-item"]');
+    if (!elements.length) return;
+
+    heroTimeline.current?.kill();
+    heroTimeline.current = gsap.timeline({ defaults: { ease: 'power2.out', overwrite: 'auto' } });
+    heroTimeline.current.to(elements, {
+      y: 0,
+      opacity: 1,
+      duration: 0.6,
+      stagger: 0.08,
+    });
+    return () => {
+      heroTimeline.current?.kill();
+      heroTimeline.current = null;
+    };
   }, { scope: container });
 
   return (
@@ -42,17 +50,27 @@ export default function Hero() {
         <div className="max-w-xl">
           
 
-          <h1 id="hero-title" data-anim="hero-item" className="text-4xl font-extrabold leading-[1.1] tracking-tight sm:text-6xl dark:text-white">
+          <h1
+            id="hero-title"
+            data-anim="hero-item"
+            className="translate-y-6 opacity-0 text-4xl font-extrabold leading-[1.1] tracking-tight sm:text-6xl dark:text-white"
+          >
             Plan smarter.
             <br />
             Estimate faster.
           </h1>
 
-          <p data-anim="hero-item" className="mt-5 max-w-prose text-base text-gray-600 dark:text-white/80">
+          <p
+            data-anim="hero-item"
+            className="mt-5 max-w-prose translate-y-6 opacity-0 text-base text-gray-600 dark:text-white/80"
+          >
             Planning poker made easy, private votes, instant reveal, quick consensus.
           </p>
 
-          <div data-anim="hero-item" className="mt-8 flex flex-col gap-3 sm:flex-row">
+          <div
+            data-anim="hero-item"
+            className="mt-8 flex translate-y-6 opacity-0 flex-col gap-3 sm:flex-row"
+          >
             <Link
               href="/session/new"
               className="inline-flex h-11 items-center justify-center rounded-full bg-indigo-600 px-6 font-medium text-white shadow-sm transition hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-indigo-500"

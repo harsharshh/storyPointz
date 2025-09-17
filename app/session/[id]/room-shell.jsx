@@ -317,7 +317,11 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
         setSpectators((prev) => ({ ...prev, [payload.userId]: flag }));
         // If a user becomes spectator before reveal, remove their vote locally
         if (flag && !revealedRef.current) {
-          setVotes((prev) => { const n = { ...prev }; delete n[payload.userId]; return n; });
+          setVotes((prev) => {
+            const n = { ...prev };
+            delete n[payload.userId];
+            return n;
+          });
         }
       };
       channel.bind('client-spectator', onSpectator);
@@ -691,7 +695,8 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
 
   // Floating SVG numbers moved to separate component
 
-  const noVotesYet = !selectedRef.current && Object.keys(votes || {}).length === 0 && !revealed;
+  const hasAnyVotes = Object.values(votes || {}).some((val) => typeof val === 'string' && val !== '');
+  const noVotesYet = !hasAnyVotes && !selected && !revealed;
 
   const textureStyleFor = (key) => {
     const rnd = seededRng(key);
