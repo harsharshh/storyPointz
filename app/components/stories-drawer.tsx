@@ -40,31 +40,31 @@ export default function StoriesDrawer({ open, onClose, sessionId }: StoriesDrawe
       }
     })();
   }, [open, sessionId]);
+
   return (
     <aside
       className={[
-        "fixed right-0 top-0 z-[61] h-full w-[92vw] max-w-md overflow-y-auto border-l border-black/10 p-4 shadow-2xl transition-transform duration-300",
-        "bg-gradient-to-br from-indigo-100 via-emerald-50 to-white dark:border-white/10",
-        "dark:bg-[radial-gradient(60%_40%_at_50%_0%,rgba(109,93,246,0.35),transparent_70%),radial-gradient(40%_40%_at_100%_60%,rgba(34,197,94,0.25),transparent_70%),linear-gradient(to_bottom,#0B0B10,rgba(11,11,16,0.85))]",
-        open ? "translate-x-0" : "translate-x-full"
+        'fixed right-0 top-0 z-[61] h-full w-[92vw] max-w-md overflow-y-auto border-l border-black/10 p-4 shadow-2xl transition-transform duration-300',
+        'bg-gradient-to-br from-indigo-100 via-emerald-50 to-white dark:border-white/10',
+        'dark:bg-[radial-gradient(60%_40%_at_50%_0%,rgba(109,93,246,0.35),transparent_70%),radial-gradient(40%_40%_at_100%_60%,rgba(34,197,94,0.25),transparent_70%),linear-gradient(to_bottom,#0B0B10,rgba(11,11,16,0.85))]',
+        open ? 'translate-x-0' : 'translate-x-full'
       ].join(' ')}
       aria-hidden={!open}
     >
-        <div className="mb-4 flex items-center justify-between">
-          <div>
-            <h3 className="text-xl font-extrabold text-gray-900 dark:text-white">Stories</h3>
-            <p className="text-xs text-gray-500 dark:text-white/60">1 Story</p>
-          </div>
-          <div className="flex items-center gap-2">
-            
-            <button className="cursor-pointer inline-grid h-9 w-9 place-items-center rounded-lg border border-black/10 text-gray-700 dark:border-white/10 dark:text-white" aria-label="Close" onClick={onClose}>
-              <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
-            </button>
-          </div>
+      <div className="mb-4 flex items-center justify-between">
+        <div>
+          <h3 className="text-xl font-extrabold text-gray-900 dark:text-white">Stories</h3>
+          <p className="text-xs text-gray-500 dark:text-white/60">1 Story</p>
         </div>
+        <div className="flex items-center gap-2">
+          <button className="cursor-pointer inline-grid h-9 w-9 place-items-center rounded-lg border border-black/10 text-gray-700 dark:border-white/10 dark:text-white" aria-label="Close" onClick={onClose}>
+            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+      </div>
 
-        {/* Stories list */}
-        <StoriesList sessionId={sessionId} initial={stories} />
+      {/* Stories list */}
+      <StoriesList sessionId={sessionId} initial={stories} />
     </aside>
   );
 }
@@ -227,14 +227,27 @@ function StoriesList({ sessionId, initial }: { sessionId?: string; initial: Stor
               }
             }}
             onDeleted={(id) => {
+              let removedStory: Story | undefined;
+              let removedIndex = -1;
               setStories((prev)=> {
-                const next = prev.filter(p=> p.id !== id);
+                const nextList: Story[] = [];
+                prev.forEach((p, idx) => {
+                  if (p.id === id) {
+                    removedStory = p;
+                    removedIndex = idx;
+                  } else {
+                    nextList.push(p);
+                  }
+                });
                 if (sessionId) {
-                  try { storiesCache.set(sessionId, next); } catch {}
+                  try { storiesCache.set(sessionId, nextList); } catch {}
                 }
-                return next;
+                return nextList;
               });
-              if (id === activeId) {
+              const wasActive = id === activeId;
+              const prevUserSelected = userSelectedActive;
+              const prevAwaiting = awaitingResult;
+              if (wasActive) {
                 setActiveId(null);
                 setUserSelectedActive(false);
                 setAwaitingResult(false);
@@ -243,6 +256,30 @@ function StoriesList({ sessionId, initial }: { sessionId?: string; initial: Stor
                   try { localStorage.removeItem(key); } catch {}
                 }
               }
+
+              return () => {
+                if (!removedStory) return;
+                setStories((prev) => {
+                  const restored = [...prev];
+                  if (removedIndex < 0 || removedIndex > restored.length) {
+                    restored.push(removedStory!);
+                  } else {
+                    restored.splice(removedIndex, 0, removedStory!);
+                  }
+                  if (sessionId) {
+                    try { storiesCache.set(sessionId, restored); } catch {}
+                  }
+                  return restored;
+                });
+                if (wasActive) {
+                  setActiveId(removedStory.id);
+                  setUserSelectedActive(prevUserSelected);
+                  setAwaitingResult(prevAwaiting);
+                  if (sessionId) {
+                    try { localStorage.setItem(`spz_active_story_${sessionId}`, removedStory.id); } catch {}
+                  }
+                }
+              };
             }}
             isActive={activeId === s.id}
             awaitingResult={awaitingResult && activeId === s.id}
@@ -320,7 +357,7 @@ type StoryCardProps = {
   story: Story;
   sessionId?: string;
   onUpdated: (story: Story) => void;
-  onDeleted: (id: string) => void;
+  onDeleted: (id: string) => (() => void) | void;
   isActive?: boolean;
   awaitingResult?: boolean;
   onSelectActive?: () => void;
@@ -410,7 +447,7 @@ function StoryCard({ story, sessionId, onUpdated, onDeleted, isActive, awaitingR
   }
 
   return (
-    <div className="relative z-auto rounded-2xl border border-black/10 bg-white/70 p-4 text-gray-900 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/5 dark:text-white dark:hover:bg-gray-900 hover:bg-white/60">
+    <div className="relative z-10 rounded-2xl border border-black/10 bg-white/70 p-4 text-gray-900 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/5 dark:text-white dark:hover:bg-gray-900 hover:bg-white/60">
       <div className="mb-2 flex items-center justify-between text-sm font-semibold opacity-80">
         <span className="text-gray-700 dark:text-white/80">{story.key}</span>
         <div className="relative">
@@ -419,17 +456,30 @@ function StoryCard({ story, sessionId, onUpdated, onDeleted, isActive, awaitingR
             <div className="absolute right-0 z-10 mt-1 w-44 overflow-hidden rounded-xl border border-black/10 bg-white shadow-lg dark:border-white/10 dark:bg-[#111217]">
               <button onClick={()=> { setEditing(true); setMenu(false); }} className="block w-full px-3 py-2 text-left text-sm text-gray-800 hover:bg-black/5 dark:text-white/90 dark:hover:bg-white/10">Edit story</button>
               <button
-                onClick={async ()=> {
+                onClick={async () => {
                   if (!sessionId || deleting) return;
                   setDeleting(true);
+                  let rollback: (() => void) | void;
                   try {
+                    rollback = onDeleted(story.id);
                     const res = await fetch(`/api/session/${encodeURIComponent(sessionId)}/stories`, {
                       method: 'DELETE',
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({ storyId: story.id }),
                     });
-                    if (res.ok){ onDeleted(story.id); }
-                  } finally { setDeleting(false); setMenu(false); }
+                    if (!res.ok) {
+                      if (res.status === 404) {
+                        rollback = undefined;
+                        return;
+                      }
+                      throw new Error('delete failed');
+                    }
+                  } catch {
+                    rollback?.();
+                  } finally {
+                    setDeleting(false);
+                    setMenu(false);
+                  }
                 }}
                 className="flex w-full items-center justify-between px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-white/10"
               >
