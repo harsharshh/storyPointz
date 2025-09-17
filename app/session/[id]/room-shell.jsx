@@ -78,6 +78,10 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
     if (prev) { try { quickLift.current[prev]?.(0); } catch {} }
     lastSelected.current = null;
     setSelected(null);
+    setCountdown(0);
+    setCountText("3");
+    countdownTlRef.current?.kill?.();
+    countdownStateRef.current = 0;
   };
   const showFloats = Boolean(enableFloatNumbers);
   useEffect(() => { activeStoryRef.current = activeStoryId; }, [activeStoryId]);
@@ -263,7 +267,12 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
           }
         } catch {}
       });
-      const onResetRound = () => { resetRoundLocal(); };
+      const onResetRound = (payload = {}) => {
+        resetRoundLocal();
+        if (Object.prototype.hasOwnProperty.call(payload, 'storyId')) {
+          setActiveStoryId(payload.storyId || null);
+        }
+      };
       channel.bind('client-reset-round', onResetRound);
       channel.bind('reset-round', onResetRound);
       // Broadcast + listen for a realtime countdown start.
@@ -329,8 +338,24 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
     const key = `spz_active_story_${sessionId}`;
     try { const v = localStorage.getItem(key); if (v) setActiveStoryId(v); } catch {}
     const onActive = (e) => {
-      const d = e?.detail || {};
-      if (d.sessionId === sessionId) setActiveStoryId(d.storyId || null);
+      const detail = e?.detail || {};
+      if (detail.sessionId !== sessionId) return;
+      const nextStoryId = detail.storyId || null;
+      const origin = detail.origin || 'drawer';
+      setActiveStoryId(nextStoryId);
+      if (origin === 'drawer') {
+        resetRoundLocal();
+        try { channelRef.current?.trigger?.('client-reset-round', { storyId: nextStoryId }); } catch {}
+        try {
+          fetch(`/api/session/${encodeURIComponent(sessionId)}/reset`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId: user?.id }),
+          });
+        } catch {}
+      } else if (origin === 'auto') {
+        resetRoundLocal();
+      }
     };
     window.addEventListener('spz:active-story', onActive);
     return () => window.removeEventListener('spz:active-story', onActive);

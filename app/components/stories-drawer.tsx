@@ -8,6 +8,7 @@ const NUMERIC_OPTIONS = [0, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89] as const;
 
 type Story = { id: string; key: string; title: string; avg?: number | null };
 type StoryAvgDetail = { sessionId: string; storyId: string; avg?: number | null };
+type ActiveStoryEventDetail = { sessionId: string; storyId: string; origin?: 'drawer' | 'auto' | 'sync' };
 
 // Helper: map any average to the immediate higher (ceiling) option in NUMERIC_OPTIONS
 const ceilOptionFor = (avg?: number | null) => {
@@ -112,7 +113,7 @@ function StoriesList({ sessionId, initial }: { sessionId?: string; initial: Stor
       if (!activeExists || activeId !== loneStory.id) {
         setActiveId(loneStory.id);
         try { localStorage.setItem(key, loneStory.id); } catch {}
-        window.dispatchEvent(new CustomEvent('spz:active-story', { detail: { sessionId, storyId: loneStory.id } }));
+      window.dispatchEvent(new CustomEvent<ActiveStoryEventDetail>('spz:active-story', { detail: { sessionId, storyId: loneStory.id, origin: 'auto' } }));
       }
       setUserSelectedActive(false);
       setAwaitingResult(typeof loneStory.avg === 'number' ? false : true);
@@ -178,7 +179,7 @@ function StoriesList({ sessionId, initial }: { sessionId?: string; initial: Stor
     setAwaitingResult(true);
     const key = `spz_active_story_${sessionId}`;
     try { localStorage.setItem(key, id); } catch {}
-    window.dispatchEvent(new CustomEvent('spz:active-story', { detail: { sessionId, storyId: id } }));
+    window.dispatchEvent(new CustomEvent<ActiveStoryEventDetail>('spz:active-story', { detail: { sessionId, storyId: id, origin: 'drawer' } }));
   }
 
   return (
