@@ -78,8 +78,11 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
 
     // ensure story belongs to session
     const story = await prisma.story.findFirst({ where: { id: storyId, sessionId }, select: { id: true } });
-    if (!story) return NextResponse.json({ error: "not found" }, { status: 404 });
+    if (!story) {
+      return NextResponse.json({ ok: true, missing: true });
+    }
 
+    await prisma.vote.deleteMany({ where: { storyId } });
     await prisma.story.delete({ where: { id: storyId } });
     return NextResponse.json({ ok: true });
   } catch (e) {
