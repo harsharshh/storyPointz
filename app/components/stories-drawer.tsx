@@ -78,6 +78,8 @@ function StoriesList({ sessionId, initial }: { sessionId?: string; initial: Stor
   const [saving, setSaving] = React.useState(false);
   const [loading, setLoading] = React.useState(false);
   const [activeId, setActiveId] = React.useState<string | null>(null);
+  const [userSelectedActive, setUserSelectedActive] = React.useState(false);
+  const [awaitingResult, setAwaitingResult] = React.useState(false);
 
   // seed from cache instantly, then fetch fresh
   React.useEffect(() => {
@@ -98,19 +100,54 @@ function StoriesList({ sessionId, initial }: { sessionId?: string; initial: Stor
     })();
   }, [sessionId]);
 
-  // initialize active story from localStorage or single-story auto activate
+  // initialize active story when drawer opens
   React.useEffect(() => {
     if (!sessionId) return;
     const key = `spz_active_story_${sessionId}`;
     const stored = typeof window !== 'undefined' ? localStorage.getItem(key) : null;
-    if (stored) {
-      setActiveId(stored);
-    } else if (stories.length === 1) {
-      setActiveId(stories[0].id);
-      try { localStorage.setItem(key, stories[0].id); } catch {}
-      window.dispatchEvent(new CustomEvent('spz:active-story', { detail: { sessionId, storyId: stories[0].id } }));
+    const activeExists = activeId ? stories.some(story => story.id === activeId) : false;
+
+    if (stories.length === 1) {
+      const loneStory = stories[0];
+      if (!activeExists || activeId !== loneStory.id) {
+        setActiveId(loneStory.id);
+        try { localStorage.setItem(key, loneStory.id); } catch {}
+        window.dispatchEvent(new CustomEvent('spz:active-story', { detail: { sessionId, storyId: loneStory.id } }));
+      }
+      setUserSelectedActive(false);
+      setAwaitingResult(typeof loneStory.avg === 'number' ? false : true);
+      return;
     }
-  }, [sessionId, stories]);
+
+    if (stories.length === 0) {
+      if (activeId !== null) setActiveId(null);
+      if (stored) {
+        try { localStorage.removeItem(key); } catch {}
+      }
+      if (userSelectedActive) setUserSelectedActive(false);
+      if (awaitingResult) setAwaitingResult(false);
+      return;
+    }
+
+    // Multiple stories: require explicit user choice unless already selected
+    if (!userSelectedActive) {
+      if (activeId !== null) setActiveId(null);
+      if (stored) {
+        try { localStorage.removeItem(key); } catch {}
+      }
+      if (awaitingResult) setAwaitingResult(false);
+      return;
+    }
+
+    if (!activeExists) {
+      if (activeId !== null) setActiveId(null);
+      if (stored) {
+        try { localStorage.removeItem(key); } catch {}
+      }
+      setUserSelectedActive(false);
+      if (awaitingResult) setAwaitingResult(false);
+    }
+  }, [sessionId, stories, activeId, userSelectedActive, awaitingResult]);
 
   // Listen for story average update events to update avg on the fly
   React.useEffect(() => {
@@ -126,14 +163,19 @@ function StoriesList({ sessionId, initial }: { sessionId?: string; initial: Stor
         try { storiesCache.set(sessionId, next); } catch {}
         return next;
       });
+      if (storyId === activeId && typeof avg === 'number') {
+        setAwaitingResult(false);
+      }
     };
     window.addEventListener('spz:story-avg', onStoryAvg);
     return () => window.removeEventListener('spz:story-avg', onStoryAvg);
-  }, [sessionId]);
+  }, [sessionId, activeId]);
 
   function selectActive(id: string){
     if (!sessionId) return;
     setActiveId(id);
+    setUserSelectedActive(true);
+    setAwaitingResult(true);
     const key = `spz_active_story_${sessionId}`;
     try { localStorage.setItem(key, id); } catch {}
     window.dispatchEvent(new CustomEvent('spz:active-story', { detail: { sessionId, storyId: id } }));
@@ -149,9 +191,38 @@ function StoriesList({ sessionId, initial }: { sessionId?: string; initial: Stor
             key={s.id}
             story={s}
             sessionId={sessionId}
-            onUpdated={(ns) => setStories((prev)=> prev.map(p=> p.id===ns.id? ns : p))}
-            onDeleted={(id) => setStories((prev)=> prev.filter(p=> p.id !== id))}
+            onUpdated={(updatedStory) => {
+              setStories((prev) => {
+                const next = prev.map(p => p.id === updatedStory.id ? updatedStory : p);
+                if (sessionId) {
+                  try { storiesCache.set(sessionId, next); } catch {}
+                }
+                return next;
+              });
+              if (updatedStory.id === activeId && typeof updatedStory.avg === 'number') {
+                setAwaitingResult(false);
+              }
+            }}
+            onDeleted={(id) => {
+              setStories((prev)=> {
+                const next = prev.filter(p=> p.id !== id);
+                if (sessionId) {
+                  try { storiesCache.set(sessionId, next); } catch {}
+                }
+                return next;
+              });
+              if (id === activeId) {
+                setActiveId(null);
+                setUserSelectedActive(false);
+                setAwaitingResult(false);
+                if (sessionId) {
+                  const key = `spz_active_story_${sessionId}`;
+                  try { localStorage.removeItem(key); } catch {}
+                }
+              }
+            }}
             isActive={activeId === s.id}
+            awaitingResult={awaitingResult && activeId === s.id}
             onSelectActive={() => selectActive(s.id)}
           />
         ))
@@ -228,10 +299,11 @@ type StoryCardProps = {
   onUpdated: (story: Story) => void;
   onDeleted: (id: string) => void;
   isActive?: boolean;
+  awaitingResult?: boolean;
   onSelectActive?: () => void;
 };
 
-function StoryCard({ story, sessionId, onUpdated, onDeleted, isActive, onSelectActive }: StoryCardProps) {
+function StoryCard({ story, sessionId, onUpdated, onDeleted, isActive, awaitingResult = false, onSelectActive }: StoryCardProps) {
   const [menu, setMenu] = React.useState(false);
   const [editing, setEditing] = React.useState(false);
   const [draft, setDraft] = React.useState(story.title);
@@ -242,6 +314,25 @@ function StoryCard({ story, sessionId, onUpdated, onDeleted, isActive, onSelectA
   const btnRef = React.useRef<HTMLButtonElement | null>(null);
   const [popPos, setPopPos] = React.useState<{top:number; left:number; width:number}>({top:0,left:0,width:224});
   const selectedOpt = ceilOptionFor(story.avg ?? null);
+  const hasPoints = typeof story.avg === 'number';
+  const isAwaiting = Boolean(isActive && awaitingResult);
+
+  const handleSelectActive = () => {
+    if (!onSelectActive) return;
+    onSelectActive();
+  };
+
+  const buttonLabel = (() => {
+    if (isAwaiting) {
+      return 'Voting now...';
+    }
+    if (isActive) {
+      return hasPoints ? 'Vote again' : 'Voting now...';
+    }
+    return hasPoints ? 'Vote again' : 'Vote this story';
+  })();
+
+  const disableVotingButton = isAwaiting;
 
   React.useEffect(() => {
     if (!avgOpen) return;
@@ -331,13 +422,16 @@ function StoryCard({ story, sessionId, onUpdated, onDeleted, isActive, onSelectA
         <>
           <div className="mb-3 text-sm">{story.title}</div>
           <div className="flex items-center justify-between">
-            {isActive ? (
-              <button className="cursor-pointer rounded-xl bg-indigo-600 px-4 py-2 text-sm font-extrabold text-white shadow-sm ring-1 ring-indigo-500/30 dark:bg-indigo-500">{typeof story.avg === 'number' ? 'Vote done' : 'Voting now...'}</button>
-            ) : (
-              <button onClick={onSelectActive} className="cursor-pointer rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-indigo-500">
-                {typeof story.avg === 'number' ? 'Vote again' : 'Vote this story'}
-              </button>
-            )}
+            <button
+              onClick={disableVotingButton ? undefined : handleSelectActive}
+              disabled={disableVotingButton}
+              className={[
+                'cursor-pointer rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-indigo-500',
+                disableVotingButton ? 'pointer-events-none' : 'hover:opacity-90',
+              ].join(' ')}
+            >
+              {buttonLabel}
+            </button>
             <div className="flex items-center gap-2">
               {/* points quick-set popover trigger */}
               <div className="relative">
