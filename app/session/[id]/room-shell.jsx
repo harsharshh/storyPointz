@@ -398,9 +398,27 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
       // persist votes to active story if present
       if (activeStoryId) {
         const payload = { storyId: activeStoryId, votes: Object.entries(votes).map(([uid,val]) => ({ userId: uid, value: val })) };
-        await fetch(`/api/session/${encodeURIComponent(sessionId)}/reveal-save`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
-        });
+        let serverAvg = null;
+        try {
+          const res = await fetch(`/api/session/${encodeURIComponent(sessionId)}/reveal-save`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+          });
+          if (res?.ok) {
+            // if API returns the updated story, use it
+            const data = await res.json().catch(() => null);
+            if (data && data.story && typeof data.story.avg === 'number') {
+              serverAvg = data.story.avg;
+            }
+          }
+        } catch {}
+        // Fallback to local computed average if server didn't return one
+        const updatedAvg = (typeof serverAvg === 'number') ? serverAvg : (typeof averageVote === 'number' ? averageVote : null);
+        try {
+          // Notify any open drawers to update this story's average immediately (no refresh needed)
+          window.dispatchEvent(new CustomEvent('spz:story-avg', {
+            detail: { sessionId, storyId: activeStoryId, avg: updatedAvg }
+          }));
+        } catch {}
       }
     } catch {}
   }

@@ -6,6 +6,9 @@ import { createPortal } from "react-dom";
 // Planning poker numeric options for setting story points quickly
 const NUMERIC_OPTIONS = [0, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89] as const;
 
+type Story = { id: string; key: string; title: string; avg?: number | null };
+type StoryAvgDetail = { sessionId: string; storyId: string; avg?: number | null };
+
 // Helper: map any average to the immediate higher (ceiling) option in NUMERIC_OPTIONS
 const ceilOptionFor = (avg?: number | null) => {
   if (typeof avg !== 'number' || Number.isNaN(avg)) return null;
@@ -22,7 +25,7 @@ type StoriesDrawerProps = {
 };
 
 export default function StoriesDrawer({ open, onClose, sessionId }: StoriesDrawerProps) {
-  const [stories, setStories] = React.useState<Array<{ id: string; key: string; title: string; avg?: number|null }>>([]);
+  const [stories, setStories] = React.useState<Story[]>([]);
   React.useEffect(() => {
     if (!open || !sessionId) return;
     (async () => {
@@ -30,7 +33,7 @@ export default function StoriesDrawer({ open, onClose, sessionId }: StoriesDrawe
         const res = await fetch(`/api/session/${encodeURIComponent(sessionId)}/stories`, { cache: 'no-store' });
         if (!res.ok) throw new Error('failed');
         const data = await res.json();
-        setStories(data.stories || []);
+        setStories((data.stories || []) as Story[]);
       } catch {
         setStories([]);
       }
@@ -66,9 +69,9 @@ export default function StoriesDrawer({ open, onClose, sessionId }: StoriesDrawe
 }
 
 // very small in-memory cache for session stories
-const storiesCache = new Map<string, Array<{ id: string; key: string; title: string; avg?: number | null }>>();
+const storiesCache = new Map<string, Story[]>();
 
-function StoriesList({ sessionId, initial }: { sessionId?: string; initial: Array<{ id: string; key: string; title: string; avg?: number|null }>}){
+function StoriesList({ sessionId, initial }: { sessionId?: string; initial: Story[] }) {
   const [stories, setStories] = React.useState(initial);
   const [adding, setAdding] = React.useState(false);
   const [draft, setDraft] = React.useState("");
@@ -87,7 +90,7 @@ function StoriesList({ sessionId, initial }: { sessionId?: string; initial: Arra
       try {
         const res = await fetch(`/api/session/${encodeURIComponent(sessionId)}/stories`, { cache: 'no-store' });
         const data = await res.json();
-        const next = data.stories || [];
+        const next = (data.stories || []) as Story[];
         setStories(next);
         storiesCache.set(sessionId, next);
       } catch {}
@@ -108,6 +111,25 @@ function StoriesList({ sessionId, initial }: { sessionId?: string; initial: Arra
       window.dispatchEvent(new CustomEvent('spz:active-story', { detail: { sessionId, storyId: stories[0].id } }));
     }
   }, [sessionId, stories]);
+
+  // Listen for story average update events to update avg on the fly
+  React.useEffect(() => {
+    if (!sessionId) return;
+    const onStoryAvg: EventListener = (event) => {
+      const detail = (event as CustomEvent<StoryAvgDetail>).detail;
+      if (!detail || detail.sessionId !== sessionId) return;
+      const { storyId, avg } = detail;
+      if (!storyId) return;
+      setStories(prev => {
+        const next = prev.map(s => s.id === storyId ? { ...s, avg: (typeof avg === 'number' ? avg : null) } : s);
+        // keep tiny cache in sync so closing/reopening drawer reflects immediately
+        try { storiesCache.set(sessionId, next); } catch {}
+        return next;
+      });
+    };
+    window.addEventListener('spz:story-avg', onStoryAvg);
+    return () => window.removeEventListener('spz:story-avg', onStoryAvg);
+  }, [sessionId]);
 
   function selectActive(id: string){
     if (!sessionId) return;
@@ -171,8 +193,12 @@ function StoriesList({ sessionId, initial }: { sessionId?: string; initial: Arra
                   });
                   if (res.ok) {
                     const data = await res.json();
-                    setStories((prev) => [...prev, data.story]);
-                    if (sessionId) storiesCache.set(sessionId, [...stories, data.story]);
+                    setStories((prev) => {
+                      const nextStory = data.story as Story;
+                      const nextList = [...prev, nextStory];
+                      if (sessionId) storiesCache.set(sessionId, nextList);
+                      return nextList;
+                    });
                     setAdding(false); setDraft('');
                   }
                 } catch {}
@@ -196,7 +222,16 @@ function StoriesList({ sessionId, initial }: { sessionId?: string; initial: Arra
   );
 }
 
-function StoryCard({ story, sessionId, onUpdated, onDeleted, isActive, onSelectActive }:{ story:{ id:string; key:string; title:string, avg?: number | null }, sessionId?: string, onUpdated:(s:{id:string;key:string;title:string;avg?: number | null})=>void, onDeleted:(id:string)=>void, isActive?: boolean, onSelectActive?: ()=>void}){
+type StoryCardProps = {
+  story: Story;
+  sessionId?: string;
+  onUpdated: (story: Story) => void;
+  onDeleted: (id: string) => void;
+  isActive?: boolean;
+  onSelectActive?: () => void;
+};
+
+function StoryCard({ story, sessionId, onUpdated, onDeleted, isActive, onSelectActive }: StoryCardProps) {
   const [menu, setMenu] = React.useState(false);
   const [editing, setEditing] = React.useState(false);
   const [draft, setDraft] = React.useState(story.title);
@@ -253,7 +288,7 @@ function StoryCard({ story, sessionId, onUpdated, onDeleted, isActive, onSelectA
       });
       if (res.ok) {
         const data = await res.json();
-        onUpdated(data.story ?? { ...story, avg: newAvg });
+        onUpdated((data.story as Story) ?? { ...story, avg: newAvg });
       }
     } finally {
       setAvgOpen(false);
@@ -344,7 +379,7 @@ function StoryCard({ story, sessionId, onUpdated, onDeleted, isActive, onSelectA
                               active
                                 ? "border-indigo-500 bg-indigo-50 text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-300"
                                 : "border-black/10 hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/10 text-gray-800 dark:text-white/80",
-                            ].join(" ")}
+                            ].join(' ')}
                           >
                             {n}
                           </button>
@@ -381,7 +416,7 @@ function StoryCard({ story, sessionId, onUpdated, onDeleted, isActive, onSelectA
                   });
                   if (res.ok){
                     const data = await res.json();
-                    onUpdated(data.story);
+                    onUpdated(data.story as Story);
                     setEditing(false);
                   }
                 } finally { setSaving(false); }

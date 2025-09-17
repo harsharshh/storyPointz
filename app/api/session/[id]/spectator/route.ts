@@ -5,7 +5,7 @@ import { pusherServer } from "../../../../../lib/pusher-server";
 // In-memory spectator registry per session (best-effort for refresh sync)
 // Note: This resets on server restarts and may not be shared across instances.
 // It complements Pusher broadcasts for robust UX without DB schema changes.
-declare global { // eslint-disable-next-line no-var
+declare global {
   var __spz_spec_store: Map<string, Set<string>> | undefined;
 }
 const spectatorStore: Map<string, Set<string>> = global.__spz_spec_store || new Map<string, Set<string>>();
