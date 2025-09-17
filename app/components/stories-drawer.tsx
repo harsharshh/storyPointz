@@ -6,8 +6,8 @@ import { createPortal } from "react-dom";
 // Planning poker numeric options for setting story points quickly
 const NUMERIC_OPTIONS = [0, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89] as const;
 
-type Story = { id: string; key: string; title: string; avg?: number | null };
-type StoryAvgDetail = { sessionId: string; storyId: string; avg?: number | null };
+type Story = { id: string; key: string; title: string; avg?: number | null; manual?: boolean };
+type StoryAvgDetail = { sessionId: string; storyId: string; avg?: number | null; manual?: boolean };
 type ActiveStoryEventDetail = { sessionId: string; storyId: string; origin?: 'drawer' | 'auto' | 'sync' };
 
 // Helper: map any average to the immediate higher (ceiling) option in NUMERIC_OPTIONS
@@ -74,6 +74,15 @@ const storiesCache = new Map<string, Story[]>();
 
 function StoriesList({ sessionId, initial }: { sessionId?: string; initial: Story[] }) {
   const [stories, setStories] = React.useState(initial);
+  const storiesRef = React.useRef(initial);
+  const manualOverrideRef = React.useRef<Record<string, boolean>>({});
+  React.useEffect(() => {
+    storiesRef.current = stories;
+    const manualMap = manualOverrideRef.current;
+    stories.forEach((story) => {
+      if (story.manual) manualMap[story.id] = true; else delete manualMap[story.id];
+    });
+  }, [stories]);
   const [adding, setAdding] = React.useState(false);
   const [draft, setDraft] = React.useState("");
   const [saving, setSaving] = React.useState(false);
@@ -92,11 +101,17 @@ function StoriesList({ sessionId, initial }: { sessionId?: string; initial: Stor
     if (prev && prev !== sessionId) {
       storiesCache.delete(prev);
       try { localStorage.removeItem(`spz_active_story_${prev}`); } catch {}
+      manualOverrideRef.current = {};
     }
     previousSessionRef.current = sessionId || undefined;
   }, [sessionId]);
   React.useEffect(() => {
     setStories(initial);
+    storiesRef.current = initial;
+    const manualMap = manualOverrideRef.current;
+    initial.forEach((story) => {
+      if (story.manual) manualMap[story.id] = true; else delete manualMap[story.id];
+    });
   }, [initial, sessionId]);
 
   
@@ -105,10 +120,14 @@ function StoriesList({ sessionId, initial }: { sessionId?: string; initial: Stor
   React.useEffect(() => {
     if (!sessionId) {
       setStories(initial);
+      storiesRef.current = initial;
       return;
     }
     const cached = storiesCache.get(sessionId);
-    if (cached && cached.length) setStories(cached);
+    if (cached && cached.length) {
+      setStories(cached);
+      storiesRef.current = cached;
+    }
     // show loader while refreshing
     setLoading(true);
     (async () => {
@@ -117,6 +136,7 @@ function StoriesList({ sessionId, initial }: { sessionId?: string; initial: Stor
         const data = await res.json();
         const next = (data.stories || []) as Story[];
         setStories(next);
+        storiesRef.current = next;
         storiesCache.set(sessionId, next);
       } catch {}
       finally { setLoading(false); }
@@ -180,8 +200,15 @@ function StoriesList({ sessionId, initial }: { sessionId?: string; initial: Stor
       if (!detail || detail.sessionId !== sessionId) return;
       const { storyId, avg } = detail;
       if (!storyId) return;
+      if (detail.manual === false) {
+        delete manualOverrideRef.current[storyId];
+      } else if (detail.manual === true) {
+        manualOverrideRef.current[storyId] = true;
+      } else if (manualOverrideRef.current[storyId]) {
+        return;
+      }
       setStories(prev => {
-        const next = prev.map(s => s.id === storyId ? { ...s, avg: (typeof avg === 'number' ? avg : null) } : s);
+        const next = prev.map(s => s.id === storyId ? { ...s, avg: (typeof avg === 'number' ? avg : null), manual: detail.manual ?? s.manual } : s);
         // keep tiny cache in sync so closing/reopening drawer reflects immediately
         try { storiesCache.set(sessionId, next); } catch {}
         return next;
@@ -215,14 +242,20 @@ function StoriesList({ sessionId, initial }: { sessionId?: string; initial: Stor
             story={s}
             sessionId={sessionId}
             onUpdated={(updatedStory) => {
+              const normalized: Story = {
+                ...updatedStory,
+                manual: updatedStory.manual ?? manualOverrideRef.current[updatedStory.id] ?? false,
+              };
+              if (normalized.manual) manualOverrideRef.current[normalized.id] = true; else delete manualOverrideRef.current[normalized.id];
               setStories((prev) => {
-                const next = prev.map(p => p.id === updatedStory.id ? updatedStory : p);
+                const next = prev.map(p => p.id === normalized.id ? normalized : p);
+                storiesRef.current = next;
                 if (sessionId) {
                   try { storiesCache.set(sessionId, next); } catch {}
                 }
                 return next;
               });
-              if (updatedStory.id === activeId && typeof updatedStory.avg === 'number') {
+              if (normalized.id === activeId && typeof normalized.avg === 'number') {
                 setAwaitingResult(false);
               }
             }}
@@ -239,6 +272,7 @@ function StoriesList({ sessionId, initial }: { sessionId?: string; initial: Stor
                     nextList.push(p);
                   }
                 });
+                delete manualOverrideRef.current[id];
                 if (sessionId) {
                   try { storiesCache.set(sessionId, nextList); } catch {}
                 }
@@ -266,6 +300,7 @@ function StoriesList({ sessionId, initial }: { sessionId?: string; initial: Stor
                   } else {
                     restored.splice(removedIndex, 0, removedStory!);
                   }
+                  if (removedStory?.manual) manualOverrideRef.current[removedStory.id] = true; else if (removedStory) delete manualOverrideRef.current[removedStory.id];
                   if (sessionId) {
                     try { storiesCache.set(sessionId, restored); } catch {}
                   }
@@ -370,6 +405,8 @@ function StoryCard({ story, sessionId, onUpdated, onDeleted, isActive, awaitingR
   const [saving, setSaving] = React.useState(false);
   const [deleting, setDeleting] = React.useState(false);
   const [avgOpen, setAvgOpen] = React.useState(false);
+  const [updatingAvg, setUpdatingAvg] = React.useState(false);
+  const [pendingAvg, setPendingAvg] = React.useState<number | null>(null);
   const popRef = React.useRef<HTMLDivElement | null>(null);
   const btnRef = React.useRef<HTMLButtonElement | null>(null);
   const [popPos, setPopPos] = React.useState<{top:number; left:number; width:number}>({top:0,left:0,width:224});
@@ -392,7 +429,7 @@ function StoryCard({ story, sessionId, onUpdated, onDeleted, isActive, awaitingR
     return hasPoints ? 'Vote again' : 'Vote this story';
   })();
 
-  const disableVotingButton = isAwaiting;
+  const disableVotingButton = isAwaiting || updatingAvg;
 
   React.useEffect(() => {
     if (!avgOpen) return;
@@ -428,21 +465,30 @@ function StoryCard({ story, sessionId, onUpdated, onDeleted, isActive, awaitingR
   }, [avgOpen]);
 
   async function setPoints(newAvg: number){
-    if (!sessionId) return;
+    if (!sessionId || updatingAvg) return;
+    const previous = { ...story };
     try {
-      // Optimistic UI update
-      onUpdated({ ...story, avg: newAvg });
+      setUpdatingAvg(true);
+      setPendingAvg(newAvg);
+      onUpdated({ ...story, avg: newAvg, manual: true });
       const res = await fetch(`/api/session/${encodeURIComponent(sessionId)}/stories`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ storyId: story.id, avg: newAvg }),
       });
-      if (res.ok) {
-        const data = await res.json();
-        onUpdated((data.story as Story) ?? { ...story, avg: newAvg });
-      }
+      if (!res.ok) throw new Error('failed');
+      const data = await res.json().catch(() => null);
+      const updatedStory = (data?.story as Story) ?? { ...story, avg: newAvg, manual: true };
+      onUpdated(updatedStory);
+      try {
+        window.dispatchEvent(new CustomEvent('spz:story-avg', { detail: { sessionId, storyId: updatedStory.id, avg: updatedStory.avg ?? null, manual: true } }));
+      } catch {}
+    } catch {
+      onUpdated(previous);
     } finally {
       setAvgOpen(false);
+      setUpdatingAvg(false);
+      setPendingAvg(null);
     }
   }
 
@@ -505,28 +551,25 @@ function StoryCard({ story, sessionId, onUpdated, onDeleted, isActive, awaitingR
             >
               {buttonLabel}
             </button>
-            <div className="flex items-center gap-2" style={{zIndex: '-1'}}>
+            <div className="flex items-center gap-2">
               {/* points quick-set popover trigger */}
               <div className="relative">
-                {typeof story.avg === 'number' ? (
-                  <button
-                    ref={btnRef}
-                    onClick={() => setAvgOpen(v => !v)}
-                    className="cursor-pointer inline-grid h-12 w-14 place-items-center rounded-lg border border-black/10 text-gray-700 hover:bg-black/5 dark:border-white/10 dark:text-white/80 dark:hover:bg-white/10"
-                    title="Set points"
-                  >
-                    {selectedOpt ?? '-'}
-                  </button>
-                ) : (
-                  <button
-                    ref={btnRef}
-                    onClick={() => setAvgOpen(v => !v)}
-                    className="cursor-pointer inline-grid h-12 w-14 place-items-center rounded-lg border border-black/10 text-gray-700 hover:bg-black/5 dark:border-white/10 dark:text-white/80 dark:hover:bg-white/10"
-                    title="Set points"
-                  >
-                    {selectedOpt ?? '-'}
-                  </button>
-                )}
+                <button
+                  ref={btnRef}
+                  onClick={() => !updatingAvg && setAvgOpen(v => !v)}
+                  className="cursor-pointer inline-grid h-12 w-14 place-items-center rounded-lg border border-black/10 text-gray-700 hover:bg-black/5 disabled:cursor-not-allowed disabled:opacity-70 dark:border-white/10 dark:text-white/80 dark:hover:bg-white/10"
+                  title="Set points"
+                  disabled={updatingAvg}
+                >
+                  {updatingAvg ? (
+                    <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden>
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                    </svg>
+                  ) : (
+                    selectedOpt ?? '-'
+                  )}
+                </button>
                 {avgOpen && typeof window !== 'undefined' && createPortal(
                   <div
                     ref={popRef}
@@ -537,18 +580,28 @@ function StoryCard({ story, sessionId, onUpdated, onDeleted, isActive, awaitingR
                     <div className="grid grid-cols-5 gap-2">
                       {NUMERIC_OPTIONS.map((n) => {
                         const active = selectedOpt === n;
+                        const isSaving = updatingAvg && pendingAvg === n;
                         return (
                           <button
                             key={`avg_${n}`}
                             onClick={() => setPoints(n)}
+                            disabled={updatingAvg}
                             className={[
-                              "cursor-pointer h-9 rounded-lg border text-sm font-semibold transition",
+                              "cursor-pointer h-9 rounded-lg border text-sm font-semibold transition disabled:cursor-not-allowed",
                               active
                                 ? "border-indigo-500 bg-indigo-50 text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-300"
                                 : "border-black/10 hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/10 text-gray-800 dark:text-white/80",
+                              updatingAvg ? 'opacity-70' : ''
                             ].join(' ')}
                           >
-                            {n}
+                            {isSaving ? (
+                              <svg className="mx-auto h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden>
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                              </svg>
+                            ) : (
+                              n
+                            )}
                           </button>
                         );
                       })}
