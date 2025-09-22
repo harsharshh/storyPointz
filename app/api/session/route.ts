@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "../../../lib/primsa";
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
 export async function POST(req: Request) {
   try {
@@ -24,5 +26,37 @@ export async function POST(req: Request) {
   } catch (e) {
     console.error("Create session failed:", e);
     return NextResponse.json({ error: "Failed to create session" }, { status: 500 });
+  }
+}
+
+export async function GET(req: Request) {
+  try {
+    const url = new URL(req.url);
+    const scope = url.searchParams.get('scope');
+
+    if (scope === 'mine') {
+      const userId = req.headers.get('x-user-id');
+      if (!userId) {
+        return NextResponse.json({ error: 'Missing x-user-id' }, { status: 400 });
+      }
+      // Filter sessions where related users contain this user id
+      const sessions = await prisma.session.findMany({
+        where: { users: { some: { id: userId } } },
+        select: { id: true, name: true, createdAt: true },
+        orderBy: { createdAt: 'desc' },
+      });
+      return NextResponse.json({ sessions });
+    }
+
+    // Default: all/team sessions
+    const sessions = await prisma.session.findMany({
+      select: { id: true, name: true, createdAt: true },
+      orderBy: { createdAt: 'desc' },
+    });
+    return NextResponse.json({ sessions });
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : String(e);
+    console.error('Fetch sessions failed:', message);
+    return NextResponse.json({ error: 'Failed to fetch sessions' }, { status: 500 });
   }
 }

@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTheme } from './theme-provider';
 
+type SessionSummary = { id: string; name: string };
+
 type TriggerVariant = 'avatar' | 'chip' | 'icon';
 
 export default function UserMenu({ userName = 'Guest user', variant = 'avatar', sessionId }: { userName?: string; variant?: TriggerVariant; sessionId?: string }) {
@@ -11,6 +13,22 @@ export default function UserMenu({ userName = 'Guest user', variant = 'avatar', 
   const btnRef = useRef<HTMLButtonElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
   const { theme, preference, setTheme } = useTheme();
+
+  const [showSessions, setShowSessions] = useState(false);
+  const [sessions, setSessions] = useState<SessionSummary[] | null>(null);
+  const [sessLoading, setSessLoading] = useState(false);
+  const [sessError, setSessError] = useState<string | null>(null);
+  const [sessionsMode, setSessionsMode] = useState<'team' | 'mine'>('team');
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const copyTimerRef = useRef<number | null>(null);
+  useEffect(() => {
+    return () => {
+      if (copyTimerRef.current) {
+        clearTimeout(copyTimerRef.current);
+        copyTimerRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const onClick = (e: MouseEvent) => {
@@ -67,6 +85,64 @@ export default function UserMenu({ userName = 'Guest user', variant = 'avatar', 
     window.addEventListener('spz:set-spectator', onExternal as EventListener);
     return () => window.removeEventListener('spz:set-spectator', onExternal as EventListener);
   }, [sessionId]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setShowSessions(false);
+    };
+    if (showSessions) document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [showSessions]);
+
+  const sessionUrl = (id: string) => `${window.location.origin}/session/${id}`;
+
+  async function fetchSessions(mode: 'team' | 'mine' = sessionsMode) {
+    try {
+      setSessError(null);
+      setSessLoading(true);
+      setSessions(null);
+
+      let url = '/api/session';
+      let headers: Record<string, string> | undefined = undefined;
+
+      if (mode === 'mine') {
+        url = '/api/session?scope=mine';
+        let uid: string | null = null;
+        try {
+          const raw = localStorage.getItem('spz_user');
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            uid = String(parsed?.id ?? parsed?.userId ?? '').trim() || null;
+          }
+        } catch {}
+        if (!uid) throw new Error('No user found in localStorage (spz_user)');
+        headers = { 'x-user-id': uid };
+      }
+
+      const res = await fetch(url, { method: 'GET', headers });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      const raw = Array.isArray(data?.sessions) ? data.sessions : [] as unknown[];
+      const normalized: SessionSummary[] = (raw as Array<{ id?: unknown; name?: unknown }>)
+        .map((r) => ({
+          id: String(r.id ?? ''),
+          name: typeof r.name === 'string' ? r.name : 'Untitled',
+        }))
+        .filter((r): r is SessionSummary => Boolean(r.id));
+      setSessions(normalized);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setSessError(msg || 'Failed to load sessions');
+    } finally {
+      setSessLoading(false);
+    }
+  }
+
+  function openSessionsModal(mode: 'team' | 'mine') {
+    setSessionsMode(mode);
+    setShowSessions(true);
+    fetchSessions(mode);
+  }
 
   const trigger = (
     <button
@@ -140,9 +216,17 @@ export default function UserMenu({ userName = 'Guest user', variant = 'avatar', 
           <div className="px-4 pb-3">
             <button
               className="w-full rounded-xl bg-indigo-600 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-indigo-500"
-              onClick={() => setOpen(false)}
+              onClick={() => { setOpen(false); openSessionsModal('team'); }}
             >
-              Edit Name
+              Team Sessions
+            </button>
+          </div>
+          <div className="px-4 pb-3">
+            <button
+              className="w-full rounded-xl bg-emerald-600 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-emerald-500 dark:bg-emerald-500"
+              onClick={() => { setOpen(false); openSessionsModal('mine'); }}
+            >
+              My Sessions
             </button>
           </div>
 
@@ -257,6 +341,91 @@ export default function UserMenu({ userName = 'Guest user', variant = 'avatar', 
               onClick={() => setOpen(false)}
             /> */}
           </ul>
+        </div>
+      )}
+
+      {showSessions && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center">
+          {/* Backdrop */}
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setShowSessions(false)} />
+
+          {/* Dialog */}
+          <div role="dialog" aria-modal="true" className="relative z-[101] w-[min(92vw,720px)] max-h-[80vh] overflow-hidden rounded-2xl border border-black/10 bg-white shadow-2xl dark:border-white/10 dark:bg-[#111217]">
+            {/* Header */}
+            <div className="flex items-center justify-between gap-3 border-b border-black/5 px-5 py-4 dark:border-white/10">
+            <div className="flex items-center gap-2">
+              <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 8h10M7 12h10M7 16h6"/></svg>
+              <h2 className="text-base font-semibold">{sessionsMode === 'mine' ? 'My Sessions' : 'Team Sessions'}</h2>
+            </div>
+              <div className="flex items-center gap-2">
+                <button onClick={() => fetchSessions(sessionsMode)} className="inline-flex items-center gap-2 rounded-lg border border-black/10 px-3 py-1.5 text-sm font-medium hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/10" disabled={sessLoading}>
+                  <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 1 1-9-9"/><path d="M21 3v9h-9"/></svg>
+                  {sessLoading ? 'Refreshing…' : 'Refresh'}
+                </button>
+                <button onClick={() => setShowSessions(false)} className="rounded-lg p-2 hover:bg-black/5 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:hover:bg-white/10" aria-label="Close">
+                  <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+                </button>
+              </div>
+            </div>
+
+            {/* Body */}
+            <div className="max-h-[60vh] overflow-auto px-5 py-4">
+              {sessError && (
+                <div className="mb-3 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-600 dark:text-red-400">{sessError}</div>
+              )}
+              {sessLoading && !sessions && (
+                <div className="py-8 text-center text-sm opacity-70">Loading your sessions…</div>
+              )}
+              {!sessLoading && sessions && sessions.length === 0 && (
+                <div className="py-8 text-center text-sm opacity-70">No sessions found.</div>
+              )}
+              {sessions && sessions.length > 0 && (
+                <ul className="divide-y divide-black/5 dark:divide-white/10">
+                  {sessions.map((s) => {
+                    const href = sessionUrl(s.id);
+                    return (
+                      <li key={s.id} className="flex flex-wrap items-center gap-3 py-3">
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-sm font-medium">{s.name || 'Untitled session'}</div>
+                          <div className="truncate text-xs text-gray-500">{s.id}</div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            className="cursor-pointer rounded-lg border border-black/10 px-3 py-1.5 text-xs font-medium hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/10"
+                            onClick={async () => {
+                          try {
+                            await navigator.clipboard.writeText(href);
+                            setCopiedId(s.id);
+                            if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+                            copyTimerRef.current = window.setTimeout(() => {
+                              setCopiedId(null);
+                              copyTimerRef.current = null;
+                            }, 1500);
+                          } catch {}
+                            }}
+                            title={copiedId === s.id ? 'Copied' : 'Copy link'}
+                            aria-live="polite"
+                          >
+                            {copiedId === s.id ? 'Copied' : 'Copy link'}
+                          </button>
+                          <a
+                            href={href}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90 dark:bg-indigo-500"
+                            title="Open session"
+                          >
+                            Open
+                            <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M7 17 17 7"/><path d="M7 7h10v10"/></svg>
+                          </a>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+          </div>
         </div>
       )}
     </div>
