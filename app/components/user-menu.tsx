@@ -12,7 +12,7 @@ export default function UserMenu({ userName = 'Guest user', variant = 'avatar', 
   const [spectator, setSpectator] = useState(false);
   const btnRef = useRef<HTMLButtonElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
-  const { theme, preference, setTheme } = useTheme();
+  const { preference, setTheme, useSystem: setSystemPref } = useTheme();
 
   const [showSessions, setShowSessions] = useState(false);
   const [sessions, setSessions] = useState<SessionSummary[] | null>(null);
@@ -367,10 +367,7 @@ export default function UserMenu({ userName = 'Guest user', variant = 'avatar', 
 
             <li className="flex items-center justify-between px-4 py-2">
               <button className="flex items-center gap-3 text-left text-gray-700 hover:text-gray-900 dark:text-white/80 dark:hover:text-white">
-                <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                  <circle cx="12" cy="12" r="3" />
-                </svg>
+                
                 <span>Spectator mode</span>
               </button>
               <label className="relative inline-flex h-6 w-11 cursor-pointer items-center">
@@ -436,15 +433,65 @@ export default function UserMenu({ userName = 'Guest user', variant = 'avatar', 
               </div>
             </li> */}
 
-            <li className="flex items-center justify-between px-4 py-2">
-              <button
-                className="flex items-center gap-3 text-left text-gray-700 hover:text-gray-900 dark:text-white/80 dark:hover:text-white"
-                onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-              >
-                <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2m10-10h-2M4 12H2m15.364-7.364l-1.414 1.414M8.05 16.95l-1.414 1.414m12.728 0l-1.414-1.414M8.05 7.05 6.636 5.636"/></svg>
-                <span>Appearance</span>
-              </button>
-              <span className="text-xs text-gray-500 dark:text-white/50">{preference}</span>
+            <li className="px-4 py-2">
+              <div className="flex items-center gap-2 text-gray-700 dark:text-white/80">
+                <span className="text-sm font-medium">Appearance</span>
+                <div className="ml-auto flex items-center gap-2">
+                  {/* System (neutral) */}
+                  <button
+                    type="button"
+                    onClick={() => { setSystemPref(); }}
+                    aria-label="System theme"
+                    title="System"
+                    aria-pressed={preference === 'system'}
+                    className={[
+                      'h-8 w-8 shrink-0 rounded-full border transition',
+                      'grid place-items-center',
+                      preference === 'system'
+                        ? 'border-indigo-500 bg-indigo-500/70 text-white dark:border-indigo-500 dark:bg-indigo-500/70 dark:text-white'
+                        : 'border-black/10 text-gray-600 hover:bg-black/5 dark:border-white/10 dark:text-white/80 dark:hover:bg-white/10'
+                    ].join(' ')}
+                  >
+                    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M7 20h10"/></svg>
+                  </button>
+
+                  {/* Light (orange) */}
+                  <button
+                    type="button"
+                    onClick={() => { setTheme('light'); }}
+                    aria-label="Light theme"
+                    title="Light"
+                    aria-pressed={preference === 'light'}
+                    className={[
+                      'h-8 w-8 shrink-0 rounded-full border transition focus:outline-none ',
+                      'grid place-items-center',
+                      preference === 'light'
+                        ? 'border-orange-500 bg-orange-100 text-orange-600 dark:border-orange-400 dark:bg-orange-200/20 dark:text-orange-300'
+                        : 'border-black/10 text-gray-600 hover:bg-black/5 dark:border-white/10 dark:text-white/80 dark:hover:bg-white/10'
+                    ].join(' ')}
+                  >
+                    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2m10-10h-2M4 12H2m15.364-7.364l-1.414 1.414M8.05 16.95l-1.414 1.414m12.728 0l-1.414-1.414M8.05 7.05 6.636 5.636"/></svg>
+                  </button>
+
+                  {/* Dark (blue) */}
+                  <button
+                    type="button"
+                    onClick={() => { setTheme('dark'); }}
+                    aria-label="Dark theme"
+                    title="Dark"
+                    aria-pressed={preference === 'dark'}
+                    className={[
+                      'h-8 w-8 shrink-0 rounded-full border transition focus:outline-none ',
+                      'grid place-items-center',
+                      preference === 'dark'
+                        ? 'border-blue-600 bg-blue-100 text-blue-700 dark:border-blue-400 dark:bg-blue-200/20 dark:text-blue-300'
+                        : 'border-black/10 text-gray-600 hover:bg-black/5 dark:border-white/10 dark:text-white/80 dark:hover:bg-white/10'
+                    ].join(' ')}
+                  >
+                    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+                  </button>
+                </div>
+              </div>
             </li>
 
             {/* <MenuItem
