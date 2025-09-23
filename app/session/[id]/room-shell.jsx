@@ -241,6 +241,18 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
           try { channelRef.current?.trigger?.('client-spectator', { userId: user?.id, spectator: true }); } catch {}
           try { fetch(`/api/session/${encodeURIComponent(sessionId)}/spectator`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: user?.id, spectator: true }) }); } catch {}
         }
+        // If the round is already revealed, immediately notify the newcomer to reveal
+        if (revealedRef.current) {
+          try { channel.trigger && channel.trigger('client-reveal-now', { by: user?.id }); } catch {}
+          // Optional server fallback to ensure delivery in case client events are blocked
+          try {
+            fetch(`/api/session/${encodeURIComponent(sessionId)}/reveal`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ userId: user?.id })
+            });
+          } catch {}
+        }
       });
       // If someone asks for sync, and we've already revealed, notify them to reveal
       channel.bind('client-sync-request', (payload) => {
