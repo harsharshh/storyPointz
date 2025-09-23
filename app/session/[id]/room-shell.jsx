@@ -103,7 +103,6 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
     return () => tl.kill();
   }, [isSelfSpectator]);
 
-
   // Initialize spectator mode from localStorage (self) and announce
   useEffect(() => {
     if (!user?.id || !sessionId) return;
@@ -308,15 +307,6 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
         setMembers((prev) => prev.filter((x) => x.id !== m.id));
         setVotes((prev) => { const n = { ...prev }; delete n[m.id]; return n; });
       });
-      // When any user updates their display name, reflect it in the seating
-      channel.bind('user:name', (payload) => {
-        try {
-          const uid = payload?.userId;
-          const newName = typeof payload?.name === 'string' ? payload.name : null;
-          if (!uid || !newName) return;
-          setMembers((prev) => prev.map((m) => (m.id === uid ? { ...m, name: newName } : m)));
-        } catch {}
-      });
       channel.bind("user-joined", (payload) => {
         // Optional extra join animation hook
       });
@@ -361,26 +351,11 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
       });
     })();
     return () => {
-      try { channel && channel.unbind && channel.unbind('user:name'); } catch {}
       try { channel && pusher?.unsubscribe?.(`presence-session-${sessionId}`); } catch {}
       try { pusher?.disconnect?.(); } catch {}
       try { channelRef.current = null; } catch {}
     };
   }, [user?.id, user?.name, sessionId, pusherKey, pusherCluster]);
-
-  // Listen for global user name updates in this tab so if user updates their own name (via user menu)
-  // the RoomShell reflects it immediately even if Pusher is slow or unauthenticated in this tab.
-  useEffect(() => {
-    const onLocalName = (e) => {
-      const newName = e?.detail?.name;
-      if (typeof newName !== 'string') return;
-      const selfId = user?.id;
-      if (!selfId) return;
-      setMembers((prev) => prev.map((m) => (m.id === selfId ? { ...m, name: newName } : m)));
-    };
-    window.addEventListener('spz:user-name-updated', onLocalName);
-    return () => window.removeEventListener('spz:user-name-updated', onLocalName);
-  }, [user?.id]);
 
   // active story wiring
   useEffect(() => {
@@ -801,7 +776,7 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
 
   return (
     <div className="relative h-[100dvh] overflow-hidden overscroll-none">
-      <Header userName={(members.find((m) => m.id === user?.id)?.name) || user?.name} sessionName={sessionName} sessionId={sessionId} />
+      <Header userName={user?.name} sessionName={sessionName} sessionId={sessionId} />
 
       {/* Stage */}
       <div className="mx-auto max-w-6xl px-6">
@@ -843,15 +818,6 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
           {(() => {
             const selfId = user?.id;
             const self = members.find((m) => m.id === selfId) || (selfId ? { id: selfId, name: user?.name } : null);
-            // If local storage already has a newer name for self, prefer it until presence sync fills in
-            try {
-              if (self && (!self.name || self.name === 'Guest user')) {
-                const raw = localStorage.getItem('spz_user');
-                const parsed = raw ? JSON.parse(raw) : null;
-                const localName = parsed?.name;
-                if (typeof localName === 'string' && localName.trim()) self.name = localName.trim();
-              }
-            } catch {}
             const others = members.filter((m) => m.id !== selfId);
             const left = others[0] ? [others[0]] : [];
             const right = others[1] ? [others[1]] : [];
