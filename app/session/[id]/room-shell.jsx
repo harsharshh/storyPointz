@@ -424,6 +424,15 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
     // kill previous timeline
     countdownTlRef.current?.kill?.();
 
+    // Clear any stale inline styles that GSAP may have left
+    const elNode = countdownRef.current;
+    if (elNode) {
+      try {
+        elNode.style.opacity = '';
+        elNode.style.transform = '';
+      } catch {}
+    }
+
     if (countdown === 0) return; // idle
     const el = countdownRef.current;
     if (!el) return;
@@ -435,6 +444,11 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
         setRevealed(true);
         setCountdown(0);
         await revealAll(); // notify server/peers
+        // Safety: clear any inline styles applied during the countdown
+        try {
+          const node = countdownRef.current;
+          if (node) { node.style.opacity = ''; node.style.transform = ''; }
+        } catch {}
       },
     });
 
@@ -454,7 +468,15 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
     show(3); show(2); show(1);
 
     countdownTlRef.current = tl;
-    return () => tl.kill();
+    // Ensure styles are cleared if the timeline is killed before completion
+    const killHandler = () => {
+      try {
+        const node = countdownRef.current;
+        if (node) { node.style.opacity = ''; node.style.transform = ''; }
+      } catch {}
+    };
+    tl.eventCallback('onKill', killHandler);
+    return () => { tl.kill(); killHandler(); };
   }, [countdown]);
 
   async function revealAll() {
@@ -1096,13 +1118,13 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
                     <ConfettiBurst trigger={revealTick} options={{ count: 48 }} />
 
                     {noVotesYet ? (
-                      <div className="relative z-10 flex items-center justify-center">
+                      <div key="mode_pick" className="relative z-10 flex items-center justify-center">
                         <div className="rounded-xl px-4 py-2 text-lg font-semibold text-gray-700 dark:text-white/80">
                           Pick your cards!
                         </div>
                       </div>
                     ) : countdown > 0 ? (
-                      <div className="relative z-10 flex items-center justify-center">
+                      <div key="mode_countdown" className="relative z-10 flex items-center justify-center">
                         <div
                           ref={countdownRef}
                           className="select-none rounded-2xl px-6 py-3 text-4xl font-black tracking-tight text-gray-900 opacity-0 dark:text-white"
@@ -1111,7 +1133,7 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
                         </div>
                       </div>
                     ) : revealed ? (
-                      <div className="relative z-10 flex items-center justify-center">
+                      <div key="mode_revealed" className="relative z-10 flex items-center justify-center">
                         <button
                           onClick={() => {
                             resetRoundLocal();
@@ -1174,7 +1196,7 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
                         </button>
                       </div>
                     ) : (
-                      <div className="relative z-10 flex items-center justify-center">
+                      <div key="mode_vote" className="relative z-10 flex items-center justify-center">
                         <button
                           onClick={() => {
                             if (countdownStateRef.current > 0 || revealedRef.current) return;
