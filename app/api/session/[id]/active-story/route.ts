@@ -7,10 +7,12 @@ export const runtime = "nodejs";
 export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params;
   try {
-    const { userId, storyId, roundActive } = (await req.json().catch(() => ({}))) as {
+    const { userId, storyId, roundActive, storyKey, storyTitle } = (await req.json().catch(() => ({}))) as {
       userId?: string;
       storyId?: string | null;
       roundActive?: boolean;
+      storyKey?: string | null;
+      storyTitle?: string | null;
     };
 
     if (!userId) {
@@ -26,10 +28,20 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     }
 
     const normalizedStoryId = typeof storyId === "string" && storyId.trim() ? storyId : null;
+    const summary = normalizedStoryId
+      ? {
+          id: normalizedStoryId,
+          key: typeof storyKey === 'string' ? storyKey : '',
+          title: typeof storyTitle === 'string' ? storyTitle : '',
+        }
+      : null;
     const payload = {
       storyId: normalizedStoryId,
       roundActive: roundActive === true,
       by: userId,
+      story: summary,
+      storyKey: summary?.key,
+      storyTitle: summary?.title,
     };
 
     await pusherServer.trigger(`presence-session-${id}`, "active-story", payload);

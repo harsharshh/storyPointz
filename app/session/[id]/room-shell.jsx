@@ -47,10 +47,85 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
   const [revealTick, setRevealTick] = useState(0);
   const revealedRef = useRef(false);
   useEffect(() => { revealedRef.current = revealed; }, [revealed]);
-  useEffect(() => {
-    if (revealed) setRevealTick((v) => v + 1);
-  }, [revealed]);
   const [activeStoryId, setActiveStoryId] = useState(null);
+  const [activeStoryMeta, setActiveStoryMeta] = useState(null);
+  const [activeStoryRoundActive, setActiveStoryRoundActive] = useState(false);
+  const activeStoryMetaRef = useRef(null);
+  const activeStoryRoundActiveRef = useRef(false);
+  const storyMetaCacheRef = useRef({});
+  const storyMetaPendingRef = useRef({});
+  const isMountedRef = useRef(true);
+  useEffect(() => () => { isMountedRef.current = false; }, []);
+  useEffect(() => { activeStoryMetaRef.current = activeStoryMeta; }, [activeStoryMeta]);
+  useEffect(() => { activeStoryRoundActiveRef.current = activeStoryRoundActive; }, [activeStoryRoundActive]);
+  const persistActiveStoryMeta = useCallback((summary) => {
+    if (!sessionId) return;
+    const metaKey = `spz_active_story_meta_${sessionId}`;
+    if (summary && typeof summary.id === 'string' && summary.id) {
+      const payload = {
+        id: summary.id,
+        key: typeof summary.key === 'string' ? summary.key : '',
+        title: typeof summary.title === 'string' ? summary.title : '',
+      };
+      try { localStorage.setItem(metaKey, JSON.stringify(payload)); } catch {}
+    } else {
+      try { localStorage.removeItem(metaKey); } catch {}
+    }
+  }, [sessionId]);
+  useEffect(() => {
+    if (revealed) {
+      setRevealTick((v) => v + 1);
+      setActiveStoryRoundActive(false);
+    }
+  }, [revealed]);
+  const ensureStoryMeta = useCallback((storyId, detailStory) => {
+    if (!storyId) {
+      activeStoryMetaRef.current = null;
+      if (isMountedRef.current) setActiveStoryMeta(null);
+      persistActiveStoryMeta(null);
+      return Promise.resolve(null);
+    }
+    if (detailStory && detailStory.id === storyId) {
+      storyMetaCacheRef.current[storyId] = detailStory;
+      activeStoryMetaRef.current = detailStory;
+      if (isMountedRef.current) setActiveStoryMeta(detailStory);
+      persistActiveStoryMeta(detailStory);
+      return Promise.resolve(detailStory);
+    }
+    const cached = storyMetaCacheRef.current[storyId];
+    if (cached) {
+      activeStoryMetaRef.current = cached;
+      if (isMountedRef.current) setActiveStoryMeta(cached);
+      return Promise.resolve(cached);
+    }
+    if (!sessionId) return Promise.resolve(null);
+    const pending = storyMetaPendingRef.current[storyId];
+    if (pending) return pending;
+    const placeholder = { id: storyId, key: '', title: '' };
+    activeStoryMetaRef.current = placeholder;
+    if (isMountedRef.current) setActiveStoryMeta(placeholder);
+    const fetchPromise = (async () => {
+      try {
+        const res = await fetch(`/api/session/${encodeURIComponent(sessionId)}/stories`, { cache: 'no-store' });
+        const data = await res.json().catch(() => null);
+        const stories = Array.isArray(data?.stories) ? data.stories : [];
+        const found = stories.find((s) => s?.id === storyId);
+        if (found) {
+          const summary = { id: found.id, key: found.key || '', title: found.title || '' };
+          storyMetaCacheRef.current[storyId] = summary;
+          activeStoryMetaRef.current = summary;
+          if (isMountedRef.current) setActiveStoryMeta(summary);
+          persistActiveStoryMeta(summary);
+          return summary;
+        }
+      } catch {}
+      return placeholder;
+    })().finally(() => {
+      delete storyMetaPendingRef.current[storyId];
+    });
+    storyMetaPendingRef.current[storyId] = fetchPromise;
+    return fetchPromise;
+  }, [sessionId, persistActiveStoryMeta]);
   // Edit popover state for admin editing votes
   const [editOpen, setEditOpen] = useState(false);
   const [editTarget, setEditTarget] = useState(null); // userId being edited
@@ -92,11 +167,25 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
     const channel = channelRef.current;
     const selfId = userRef.current?.id || null;
     const nextRoundActive = typeof roundActive === 'boolean' ? roundActive : Boolean(storyId);
+    const cachedMeta = storyId ? storyMetaCacheRef.current?.[storyId] : null;
+    const refMeta = activeStoryMetaRef.current;
+    const summarySource = storyId && cachedMeta && cachedMeta.id === storyId
+      ? cachedMeta
+      : (refMeta && refMeta.id === storyId ? refMeta : null);
+    const summary = summarySource
+      ? { id: summarySource.id, key: summarySource.key || '', title: summarySource.title || '' }
+      : null;
     const payload = {
       storyId: storyId || null,
       roundActive: nextRoundActive,
       by: selfId,
     };
+    if (summary) {
+      payload.story = summary;
+      payload.storyKey = summary.key;
+      payload.storyTitle = summary.title;
+      persistActiveStoryMeta(summary);
+    }
     if (channel && typeof channel.trigger === 'function') {
       try { channel.trigger('client-active-story', payload); } catch {}
     }
@@ -105,10 +194,16 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
       fetch(`/api/session/${encodeURIComponent(sessionId)}/active-story`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: selfId, storyId: storyId || null, roundActive: nextRoundActive }),
+        body: JSON.stringify({
+          userId: selfId,
+          storyId: storyId || null,
+          roundActive: nextRoundActive,
+          storyKey: summary?.key || null,
+          storyTitle: summary?.title || null,
+        }),
       }).catch(() => {});
     } catch {}
-  }, [sessionId]);
+  }, [sessionId, persistActiveStoryMeta]);
 
   // Spectator eye blink animation
   useEffect(() => {
@@ -244,9 +339,31 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
         const rawId = payload?.storyId;
         const storyId = (typeof rawId === 'string' && rawId.trim()) ? rawId : null;
         const roundActive = typeof payload?.roundActive === 'boolean' ? payload.roundActive : Boolean(storyId);
+        let storySummary = null;
+        const payloadStory = payload?.story;
+        if (payloadStory && typeof payloadStory === 'object' && payloadStory !== null) {
+          const sid = typeof payloadStory.id === 'string' ? payloadStory.id : storyId;
+          if (sid) {
+            storySummary = {
+              id: sid,
+              key: typeof payloadStory.key === 'string' ? payloadStory.key : '',
+              title: typeof payloadStory.title === 'string' ? payloadStory.title : '',
+            };
+          }
+        } else if (storyId) {
+          const keyFromPayload = typeof payload?.storyKey === 'string' ? payload.storyKey : '';
+          const titleFromPayload = typeof payload?.storyTitle === 'string' ? payload.storyTitle : '';
+          if (keyFromPayload || titleFromPayload) {
+            storySummary = { id: storyId, key: keyFromPayload, title: titleFromPayload };
+          }
+        }
+        if (storyId && storySummary) {
+          storyMetaCacheRef.current[storyId] = storySummary;
+          persistActiveStoryMeta(storySummary);
+        }
         try {
           window.dispatchEvent(new CustomEvent('spz:active-story', {
-            detail: { sessionId, storyId, origin: source, roundActive }
+            detail: { sessionId, storyId, origin: source, roundActive, story: storySummary }
           }));
         } catch {}
       };
@@ -324,7 +441,8 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
         const activeId = activeStoryRef.current;
         if (activeId) {
           try {
-            setTimeout(() => emitActiveStory(activeId, !revealedRef.current), 160);
+            const roundFlag = activeStoryRoundActiveRef.current;
+            setTimeout(() => emitActiveStory(activeId, roundFlag), 160);
           } catch {}
         }
         // If the round is already revealed, immediately notify the newcomer to reveal
@@ -371,7 +489,20 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
         if (Object.prototype.hasOwnProperty.call(payload, 'storyId')) {
           const nextStoryId = payload.storyId || null;
           setActiveStoryId(nextStoryId);
-          forwardActiveStory({ storyId: nextStoryId, roundActive: Boolean(nextStoryId) }, 'sync');
+          let summary = null;
+          const rawStory = payload.story;
+          if (rawStory && typeof rawStory === 'object') {
+            summary = {
+              id: typeof rawStory.id === 'string' ? rawStory.id : nextStoryId,
+              key: typeof rawStory.key === 'string' ? rawStory.key : '',
+              title: typeof rawStory.title === 'string' ? rawStory.title : '',
+            };
+          } else if (nextStoryId && storyMetaCacheRef.current[nextStoryId]) {
+            summary = storyMetaCacheRef.current[nextStoryId];
+          }
+          setActiveStoryRoundActive(Boolean(nextStoryId));
+          ensureStoryMeta(nextStoryId, summary);
+          forwardActiveStory({ storyId: nextStoryId, roundActive: Boolean(nextStoryId), story: summary }, 'sync');
         }
       };
       channel.bind('client-reset-round', onResetRound);
@@ -474,12 +605,36 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
       try { pusher?.disconnect?.(); } catch {}
       try { channelRef.current = null; } catch {}
     };
-  }, [user?.id, user?.name, sessionId, pusherKey, pusherCluster, onUserChange]);
+  }, [user?.id, user?.name, sessionId, pusherKey, pusherCluster, onUserChange, ensureStoryMeta, emitActiveStory, persistActiveStoryMeta]);
 
   // active story wiring
   useEffect(() => {
     const key = `spz_active_story_${sessionId}`;
-    try { const v = localStorage.getItem(key); if (v) setActiveStoryId(v); } catch {}
+    try {
+      const v = localStorage.getItem(key);
+      if (v) {
+        setActiveStoryId(v);
+        ensureStoryMeta(v, null);
+      }
+      if (sessionId) {
+        const metaRaw = localStorage.getItem(`spz_active_story_meta_${sessionId}`);
+        if (metaRaw) {
+          try {
+            const parsed = JSON.parse(metaRaw);
+            if (parsed && typeof parsed.id === 'string') {
+              const summary = {
+                id: parsed.id,
+                key: typeof parsed.key === 'string' ? parsed.key : '',
+                title: typeof parsed.title === 'string' ? parsed.title : '',
+              };
+              storyMetaCacheRef.current[summary.id] = summary;
+              activeStoryMetaRef.current = summary;
+              if (isMountedRef.current) setActiveStoryMeta(summary);
+            }
+          } catch {}
+        }
+      }
+    } catch {}
     const onActive = (e) => {
       const detail = e?.detail || {};
       if (detail.sessionId !== sessionId) return;
@@ -487,15 +642,26 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
       if (typeof detail.storyId === 'string' && detail.storyId.trim()) nextStoryId = detail.storyId;
       if (detail.storyId === null) nextStoryId = null;
       const origin = detail.origin || 'drawer';
-      const roundActive = typeof detail.roundActive === 'boolean' ? detail.roundActive : Boolean(nextStoryId);
+      const roundActive = Boolean(typeof detail.roundActive === 'boolean' ? detail.roundActive : Boolean(nextStoryId));
+      const detailStoryRaw = detail.story;
+      const detailStory = (detailStoryRaw && typeof detailStoryRaw === 'object')
+        ? {
+            id: typeof detailStoryRaw.id === 'string' ? detailStoryRaw.id : nextStoryId,
+            key: typeof detailStoryRaw.key === 'string' ? detailStoryRaw.key : '',
+            title: typeof detailStoryRaw.title === 'string' ? detailStoryRaw.title : '',
+          }
+        : null;
       setActiveStoryId(nextStoryId);
       try { activeStoryRef.current = nextStoryId; } catch {}
+      setActiveStoryRoundActive(Boolean(roundActive && nextStoryId));
+      ensureStoryMeta(nextStoryId, detailStory);
       if (origin !== 'sync') {
         emitActiveStory(nextStoryId, roundActive);
       }
       if (origin === 'drawer') {
         resetRoundLocal();
-        try { channelRef.current?.trigger?.('client-reset-round', { storyId: nextStoryId }); } catch {}
+        const summaryPayload = detailStory || (nextStoryId ? storyMetaCacheRef.current[nextStoryId] : null);
+        try { channelRef.current?.trigger?.('client-reset-round', { storyId: nextStoryId, story: summaryPayload }); } catch {}
         try {
           fetch(`/api/session/${encodeURIComponent(sessionId)}/reset`, {
             method: 'POST',
@@ -509,7 +675,7 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
     };
     window.addEventListener('spz:active-story', onActive);
     return () => window.removeEventListener('spz:active-story', onActive);
-  }, [sessionId, isDark]);
+  }, [sessionId, isDark, ensureStoryMeta, emitActiveStory]);
 
   // Animate SVG pattern on the board (dense thread drift)
   useEffect(() => {
@@ -865,6 +1031,12 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
 
   const hasAnyVotes = Object.values(votes || {}).some((val) => typeof val === 'string' && val !== '');
   const noVotesYet = !hasAnyVotes && !selected && !revealed;
+  const activeStoryKey = (activeStoryMeta?.key || '').trim();
+  const activeStoryTitleTextRaw = (activeStoryMeta?.title || '').trim();
+  const chipTitleText = activeStoryTitleTextRaw || (activeStoryKey ? `Story ${activeStoryKey}` : 'Active story');
+  const showVotingChip = Boolean(activeStoryId && activeStoryRoundActive && !revealed);
+  const cachedStoryMeta = activeStoryId ? storyMetaCacheRef.current?.[activeStoryId] : null;
+  const storyChipDetail = activeStoryMeta || cachedStoryMeta || (activeStoryId ? { id: activeStoryId, key: activeStoryKey || '', title: activeStoryTitleTextRaw || '' } : null);
 
   const textureStyleFor = (key) => {
     const rnd = seededRng(key);
@@ -906,7 +1078,27 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
 
       {/* Stage */}
       <div className="mx-auto max-w-6xl px-6">
-        <div className="relative flex h-[calc(100dvh-56px-160px)] flex-col items-center justify-center gap-8 pt-6 sm:h-[calc(100dvh-64px-160px)] sm:pt-8 overflow-hidden">
+        <div className="relative flex h-[calc(100dvh-56px-160px)] flex-col items-center justify-center gap-6 overflow-hidden pt-6 sm:h-[calc(100dvh-64px-160px)] sm:pt-8">
+          {showVotingChip && storyChipDetail && (
+            <div className="relative z-30 flex w-full justify-center px-2 sm:px-4">
+              <div className="inline-flex max-w-full flex-wrap items-center gap-3 rounded-full border border-indigo-500/30 bg-white/95 px-4 py-1.5 text-sm font-semibold text-indigo-700 shadow-lg backdrop-blur-md dark:border-indigo-400/40 dark:bg-gray-900/85 dark:text-indigo-200">
+                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[11px] font-bold uppercase tracking-[0.18em] text-emerald-600 dark:bg-emerald-400/10 dark:text-emerald-300">
+                  <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500 dark:bg-emerald-300" />
+                  Voting now
+                </span>
+                <div className="flex flex-wrap items-center gap-2">
+                  {storyChipDetail.key && (
+                    <span className="rounded-full bg-indigo-500/90 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-white shadow-sm dark:bg-indigo-400/80">
+                      {storyChipDetail.key}
+                    </span>
+                  )}
+                  <span className="max-w-[60vw] truncate text-sm font-semibold text-gray-900 dark:text-white">
+                    {storyChipDetail.title || chipTitleText}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
           {/* Invite helper (hide when more than one participant) */}
           {/* Invite helper (hide when more than one participant) */}
           {members.length <= 1 && (
