@@ -474,7 +474,6 @@ type StoryCardProps = {
 };
 
 function StoryCard({ story, sessionId, onUpdated, onDeleted, isActive, awaitingResult = false, onSelectActive }: StoryCardProps) {
-  const [menu, setMenu] = React.useState(false);
   const [editing, setEditing] = React.useState(false);
   const [draft, setDraft] = React.useState(story.title);
   const [saving, setSaving] = React.useState(false);
@@ -568,47 +567,63 @@ function StoryCard({ story, sessionId, onUpdated, onDeleted, isActive, awaitingR
   }
 
   return (
-    <div className="relative z-10 rounded-2xl border border-black/10 bg-white/70 p-4 text-gray-900 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/5 dark:text-white dark:hover:bg-gray-900 hover:bg-white/60">
+    <div className="group/story relative z-10 rounded-2xl border border-black/10 bg-white/70 p-4 text-gray-900 shadow-sm backdrop-blur transition hover:bg-white/60 dark:border-white/10 dark:bg-white/5 dark:text-white dark:hover:bg-gray-900">
       <div className="mb-2 flex items-center justify-between text-sm font-semibold opacity-80">
         <span className="text-gray-700 dark:text-white/80">{story.key}</span>
-        <div className="relative">
-          <button onClick={()=> setMenu((v)=>!v)} className="cursor-pointer inline-grid h-8 w-8 place-items-center rounded-lg border border-black/10 text-gray-700 hover:bg-black/5 dark:border-white/10 dark:text-white/80 dark:hover:bg-white/10" title="Menu">•••</button>
-          {menu && (
-            <div className="absolute right-0 z-50 mt-1 w-44 overflow-hidden rounded-xl border border-black/10 bg-white shadow-[0_12px_30px_rgba(15,23,42,0.22)] dark:border-white/10 dark:bg-[#111217]">
-              <button onClick={()=> { setEditing(true); setMenu(false); }} className="block w-full px-3 py-2 text-left text-sm text-gray-800 hover:bg-black/5 dark:text-white/90 dark:hover:bg-white/10">Edit story</button>
-              <button
-                onClick={async () => {
-                  if (!sessionId || deleting) return;
-                  setDeleting(true);
-                  let rollback: (() => void) | undefined;
-                  try {
-                    rollback = onDeleted(story.id);
-                    const res = await fetch(`/api/session/${encodeURIComponent(sessionId)}/stories`, {
-                      method: 'DELETE',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ storyId: story.id }),
-                    });
-                    if (!res.ok) {
-                      if (res.status === 404) {
-                        rollback = undefined;
-                        return;
-                      }
-                      throw new Error('delete failed');
-                    }
-                  } catch {
-                    rollback?.();
-                  } finally {
-                    setDeleting(false);
-                    setMenu(false);
+        <div className="flex items-center gap-2 opacity-0 transition-opacity group-hover/story:opacity-100">
+          <button
+            type="button"
+            onClick={() => setEditing(true)}
+            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-black/10 text-gray-600 transition hover:bg-black/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:border-white/10 dark:text-white/80 dark:hover:bg-white/10"
+            title="Edit story"
+          >
+            <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 20h9" />
+              <path d="M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4Z" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            onClick={async () => {
+              if (!sessionId || deleting) return;
+              setDeleting(true);
+              let rollback: (() => void) | undefined;
+              try {
+                rollback = onDeleted(story.id);
+                const res = await fetch(`/api/session/${encodeURIComponent(sessionId)}/stories`, {
+                  method: 'DELETE',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ storyId: story.id }),
+                });
+                if (!res.ok) {
+                  if (res.status === 404) {
+                    rollback = undefined;
+                    return;
                   }
-                }}
-                className="flex w-full items-center justify-between px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-white/10"
-              >
-                <span>Delete story</span>
-                {deleting && <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" /></svg>}
-              </button>
-            </div>
-          )}
+                  throw new Error('delete failed');
+                }
+              } catch {
+                rollback?.();
+              } finally {
+                setDeleting(false);
+              }
+            }}
+            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-black/10 text-red-500 transition hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-400 dark:border-white/10 dark:text-red-400 dark:hover:bg-white/10"
+            title="Delete story"
+          >
+            {deleting ? (
+              <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden>
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+              </svg>
+            ) : (
+              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="3 6 5 6 21 6" />
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+                <path d="M10 11v6M14 11v6" />
+              </svg>
+            )}
+          </button>
         </div>
       </div>
 
