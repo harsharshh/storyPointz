@@ -8,7 +8,7 @@ import { usePathname } from 'next/navigation';
 import UserMenu from './user-menu';
 import StoriesDrawer from './stories-drawer';
 
-export default function Header({ userName, sessionName, sessionId }: { userName?: string; sessionName?: string; sessionId?: string } = {}) {
+export default function Header({ userName, sessionName, sessionId, onUserNameChange }: { userName?: string; sessionName?: string; sessionId?: string; onUserNameChange?: (name: string) => void } = {}) {
   const logoRef = useRef<HTMLAnchorElement | null>(null);
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -82,7 +82,7 @@ export default function Header({ userName, sessionName, sessionId }: { userName?
             <>
               {/* Desktop actions */}
               <div className="hidden items-center gap-3 sm:flex">
-                <UserMenu userName={userName} variant="chip" sessionId={sessionId} />
+                <UserMenu userName={userName} variant="chip" sessionId={sessionId} onNameUpdated={onUserNameChange} />
                 <button
                   type="button"
                   onClick={() => setInviteOpen(true)}

@@ -48,8 +48,12 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
     });
 
     // Notify channel about join (best-effort)
+    const realtimePayload = { userId: effectiveUserId, name };
     try {
       await pusherServer.trigger(`presence-session-${id}`, "user-joined", { id: effectiveUserId, name });
+    } catch {}
+    try {
+      await pusherServer.trigger(`presence-session-${id}`, "name-change", realtimePayload);
     } catch {}
 
     return NextResponse.json({ userId: effectiveUserId });
