@@ -8,12 +8,14 @@ import FloatingNumbers from "../../components/floating-numbers";
 import ConfettiBurst from "../../components/confetti-burst";
 import { useTheme } from "../../components/theme-provider";
 
-export default function RoomShell({ sessionId, sessionName, user, enableFloatNumbers = true }) {
+export default function RoomShell({ sessionId, sessionName, user, enableFloatNumbers = true, onUserChange }) {
   const values = ["0", "1", "2", "3", "5", "8", "13", "21", "34", "55", "89", "?", "☕"];
   // GSAP card button refs
   const cardRefs = useRef({});
   const channelRef = useRef(null);
   const quickLift = useRef({});
+  const userRef = useRef(user);
+  useEffect(() => { userRef.current = user; }, [user]);
   const lastSelected = useRef(null);
   const [selected, setSelected] = useState(null);
   const selectedRef = useRef(null);
@@ -124,6 +126,33 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
     return () => clearTimeout(t);
   }, [copied]);
 
+  const applySelfNameUpdate = (name) => {
+    const raw = typeof name === 'string' ? name.trim() : '';
+    const nextName = raw || 'Guest user';
+    const current = userRef.current;
+    const selfId = current?.id;
+    if (selfId) {
+      setMembers((prev) => {
+        let found = false;
+        const next = prev.map((m) => {
+          if (m.id === selfId) {
+            found = true;
+            return { ...m, name: nextName };
+          }
+          return m;
+        });
+        if (!found) return [...next, { id: selfId, name: nextName }];
+        return next;
+      });
+      try { channelRef.current?.trigger?.('client-name-change', { userId: selfId, name: nextName }); } catch {}
+    }
+    if (current) {
+      const updatedUser = { ...current, name: nextName };
+      userRef.current = updatedUser;
+      onUserChange?.(updatedUser);
+    }
+  };
+
   // Listen for spectator toggle from user-menu and broadcast
   useEffect(() => {
     const onSpec = (e) => {
@@ -192,7 +221,22 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
       channel.bind("pusher:subscription_succeeded", () => {
         const list = [];
         channel.members.each((m) => list.push({ id: m.id, name: m.info?.name }));
-        setMembers(list);
+        setMembers(() => {
+          const base = list.map((m) => ({ id: m.id, name: typeof m.name === 'string' && m.name.trim() ? m.name : 'Guest user' }));
+          const selfUser = userRef.current;
+          if (!selfUser?.id) return base;
+          const selfName = (selfUser.name && selfUser.name.trim()) ? selfUser.name : 'Guest user';
+          let foundSelf = false;
+          const patched = base.map((m) => {
+            if (m.id === selfUser.id) {
+              foundSelf = true;
+              return { ...m, name: selfName };
+            }
+            return m;
+          });
+          if (!foundSelf) patched.push({ id: selfUser.id, name: selfName });
+          return patched;
+        });
         // Fetch current spectator list from server best-effort store
         fetch(`/api/session/${encodeURIComponent(sessionId)}/spectator`, { cache: 'no-store' })
           .then(r => r.json()).then((d) => {
@@ -239,6 +283,18 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
         if (spec) {
           try { channelRef.current?.trigger?.('client-spectator', { userId: user?.id, spectator: true }); } catch {}
           try { fetch(`/api/session/${encodeURIComponent(sessionId)}/spectator`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: user?.id, spectator: true }) }); } catch {}
+        }
+        // If the round is already revealed, immediately notify the newcomer to reveal
+        if (revealedRef.current) {
+          try { channel.trigger && channel.trigger('client-reveal-now', { by: user?.id }); } catch {}
+          // Optional server fallback to ensure delivery in case client events are blocked
+          try {
+            fetch(`/api/session/${encodeURIComponent(sessionId)}/reveal`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ userId: user?.id })
+            });
+          } catch {}
         }
       });
       // If someone asks for sync, and we've already revealed, notify them to reveal
@@ -298,6 +354,32 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
       channel.bind("user-joined", (payload) => {
         // Optional extra join animation hook
       });
+      const onNameChange = (payload) => {
+        const uid = payload?.userId;
+        if (!uid) return;
+        const incoming = typeof payload?.name === 'string' ? payload.name.trim() : '';
+        const nextName = incoming || 'Guest user';
+        setMembers((prev) => {
+          let updated = false;
+          const mapped = prev.map((m) => {
+            if (m.id === uid) {
+              updated = true;
+              return { ...m, name: nextName };
+            }
+            return m;
+          });
+          if (!updated) return [...mapped, { id: uid, name: nextName }];
+          return mapped;
+        });
+        const current = userRef.current;
+        if (current?.id === uid && current.name !== nextName) {
+          const updatedUser = { ...current, name: nextName };
+          userRef.current = updatedUser;
+          onUserChange?.(updatedUser);
+        }
+      };
+      channel.bind('client-name-change', onNameChange);
+      channel.bind('name-change', onNameChange);
       channel.bind("vote-cast", (payload) => {
         if (payload && payload.userId && typeof payload.value === "string") {
           setVotes((prev) => ({ ...prev, [payload.userId]: payload.value }));
@@ -339,11 +421,13 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
       });
     })();
     return () => {
+      try { channel?.unbind?.('client-name-change', onNameChange); } catch {}
+      try { channel?.unbind?.('name-change', onNameChange); } catch {}
       try { channel && pusher?.unsubscribe?.(`presence-session-${sessionId}`); } catch {}
       try { pusher?.disconnect?.(); } catch {}
       try { channelRef.current = null; } catch {}
     };
-  }, [user?.id, user?.name, sessionId, pusherKey, pusherCluster]);
+  }, [user?.id, user?.name, sessionId, pusherKey, pusherCluster, onUserChange]);
 
   // active story wiring
   useEffect(() => {
@@ -399,6 +483,15 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
     // kill previous timeline
     countdownTlRef.current?.kill?.();
 
+    // Clear any stale inline styles that GSAP may have left
+    const elNode = countdownRef.current;
+    if (elNode) {
+      try {
+        elNode.style.opacity = '';
+        elNode.style.transform = '';
+      } catch {}
+    }
+
     if (countdown === 0) return; // idle
     const el = countdownRef.current;
     if (!el) return;
@@ -410,6 +503,11 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
         setRevealed(true);
         setCountdown(0);
         await revealAll(); // notify server/peers
+        // Safety: clear any inline styles applied during the countdown
+        try {
+          const node = countdownRef.current;
+          if (node) { node.style.opacity = ''; node.style.transform = ''; }
+        } catch {}
       },
     });
 
@@ -429,7 +527,15 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
     show(3); show(2); show(1);
 
     countdownTlRef.current = tl;
-    return () => tl.kill();
+    // Ensure styles are cleared if the timeline is killed before completion
+    const killHandler = () => {
+      try {
+        const node = countdownRef.current;
+        if (node) { node.style.opacity = ''; node.style.transform = ''; }
+      } catch {}
+    };
+    tl.eventCallback('onKill', killHandler);
+    return () => { tl.kill(); killHandler(); };
   }, [countdown]);
 
   async function revealAll() {
@@ -742,7 +848,7 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
 
   return (
     <div className="relative h-[100dvh] overflow-hidden overscroll-none">
-      <Header userName={user?.name} sessionName={sessionName} sessionId={sessionId} />
+      <Header userName={user?.name} sessionName={sessionName} sessionId={sessionId} onUserNameChange={applySelfNameUpdate} />
 
       {/* Stage */}
       <div className="mx-auto max-w-6xl px-6">
@@ -1062,13 +1168,13 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
                     <ConfettiBurst trigger={revealTick} options={{ count: 48 }} />
 
                     {noVotesYet ? (
-                      <div className="relative z-10 flex items-center justify-center">
+                      <div key="mode_pick" className="relative z-10 flex items-center justify-center">
                         <div className="rounded-xl px-4 py-2 text-lg font-semibold text-gray-700 dark:text-white/80">
                           Pick your cards!
                         </div>
                       </div>
                     ) : countdown > 0 ? (
-                      <div className="relative z-10 flex items-center justify-center">
+                      <div key="mode_countdown" className="relative z-10 flex items-center justify-center">
                         <div
                           ref={countdownRef}
                           className="select-none rounded-2xl px-6 py-3 text-4xl font-black tracking-tight text-gray-900 opacity-0 dark:text-white"
@@ -1077,7 +1183,7 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
                         </div>
                       </div>
                     ) : revealed ? (
-                      <div className="relative z-10 flex items-center justify-center">
+                      <div key="mode_revealed" className="relative z-10 flex items-center justify-center">
                         <button
                           onClick={() => {
                             resetRoundLocal();
@@ -1140,7 +1246,7 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
                         </button>
                       </div>
                     ) : (
-                      <div className="relative z-10 flex items-center justify-center">
+                      <div key="mode_vote" className="relative z-10 flex items-center justify-center">
                         <button
                           onClick={() => {
                             if (countdownStateRef.current > 0 || revealedRef.current) return;
