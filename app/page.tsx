@@ -28,7 +28,7 @@ export default function Home() {
 
   return (
     <div ref={container} className="flex min-h-screen flex-col">
-      <Header userName={userName} sessionId={userId} />
+      <Header userName={userName ?? undefined} sessionId={userId ?? undefined} />
       <main className="flex-1">
         <Hero />
       </main>
