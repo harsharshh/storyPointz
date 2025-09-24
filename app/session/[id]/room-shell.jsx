@@ -6,6 +6,7 @@ import gsap from "gsap";
 import Header from "../../components/header";
 import FloatingNumbers from "../../components/floating-numbers";
 import ConfettiBurst from "../../components/confetti-burst";
+import ChatWidget from "../../components/chat-widget";
 import { useTheme } from "../../components/theme-provider";
 
 export default function RoomShell({ sessionId, sessionName, user, enableFloatNumbers = true, onUserChange }) {
@@ -50,14 +51,20 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
   const [activeStoryId, setActiveStoryId] = useState(null);
   const [activeStoryMeta, setActiveStoryMeta] = useState(null);
   const [activeStoryRoundActive, setActiveStoryRoundActive] = useState(false);
+  const [chatMessages, setChatMessages] = useState([]);
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatUnread, setChatUnread] = useState(0);
   const activeStoryMetaRef = useRef(null);
   const activeStoryRoundActiveRef = useRef(false);
+  const chatOpenRef = useRef(false);
+  const chatMessageIdsRef = useRef(new Set());
   const storyMetaCacheRef = useRef({});
   const storyMetaPendingRef = useRef({});
   const isMountedRef = useRef(true);
   useEffect(() => () => { isMountedRef.current = false; }, []);
   useEffect(() => { activeStoryMetaRef.current = activeStoryMeta; }, [activeStoryMeta]);
   useEffect(() => { activeStoryRoundActiveRef.current = activeStoryRoundActive; }, [activeStoryRoundActive]);
+  useEffect(() => { chatOpenRef.current = chatOpen; }, [chatOpen]);
   const persistActiveStoryMeta = useCallback((summary) => {
     if (!sessionId) return;
     const metaKey = `spz_active_story_meta_${sessionId}`;
@@ -78,6 +85,17 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
       setActiveStoryRoundActive(false);
     }
   }, [revealed]);
+  useEffect(() => {
+    const ids = chatMessages
+      .map((m) => (m && m.id) || null)
+      .filter((id) => typeof id === 'string' && id);
+    chatMessageIdsRef.current = new Set(ids);
+  }, [chatMessages]);
+  useEffect(() => {
+    chatMessageIdsRef.current = new Set();
+    setChatMessages([]);
+    setChatUnread(0);
+  }, [sessionId]);
   const ensureStoryMeta = useCallback((storyId, detailStory) => {
     if (!storyId) {
       activeStoryMetaRef.current = null;
@@ -126,6 +144,55 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
     storyMetaPendingRef.current[storyId] = fetchPromise;
     return fetchPromise;
   }, [sessionId, persistActiveStoryMeta]);
+
+  const pushChatMessage = useCallback((incoming = {}) => {
+    const rawId = typeof incoming?.id === 'string' ? incoming.id : '';
+    const rawBody = typeof incoming?.body === 'string' ? incoming.body : '';
+    if (!rawId || !rawBody.trim()) return;
+    if (chatMessageIdsRef.current.has(rawId)) return;
+    chatMessageIdsRef.current.add(rawId);
+    const normalized = {
+      id: rawId,
+      userId: typeof incoming?.userId === 'string' ? incoming.userId : undefined,
+      author: typeof incoming?.author === 'string' && incoming.author.trim() ? incoming.author.trim() : 'Guest user',
+      body: rawBody.trim(),
+      timestamp: typeof incoming?.timestamp === 'string' && incoming.timestamp ? incoming.timestamp : new Date().toISOString(),
+    };
+    setChatMessages((prev) => [...prev.slice(Math.max(prev.length - 99, 0)), normalized]);
+    if (!chatOpenRef.current) {
+      setChatUnread((count) => count + 1);
+    }
+  }, []);
+
+  const handleChatToggle = useCallback((nextOpen) => {
+    setChatOpen(nextOpen);
+    if (nextOpen) {
+      setChatUnread(0);
+    }
+  }, []);
+
+  const handleChatSubmit = useCallback(async (text) => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    const currentUser = userRef.current;
+    const authorName = currentUser?.name && currentUser.name.trim() ? currentUser.name.trim() : 'Guest user';
+    const message = {
+      id: `${Date.now()}_${Math.random().toString(16).slice(2)}`,
+      userId: currentUser?.id,
+      author: authorName,
+      body: trimmed,
+      timestamp: new Date().toISOString(),
+    };
+    pushChatMessage(message);
+    try { channelRef.current?.trigger?.('client-chat-message', message); } catch {}
+    try {
+      await fetch(`/api/session/${encodeURIComponent(sessionId)}/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: currentUser?.id, message }),
+      });
+    } catch {}
+  }, [pushChatMessage, sessionId]);
   // Edit popover state for admin editing votes
   const [editOpen, setEditOpen] = useState(false);
   const [editTarget, setEditTarget] = useState(null); // userId being edited
@@ -372,6 +439,11 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
       };
       channel.bind('client-active-story', onActiveStoryFromPeer);
       channel.bind('active-story', onActiveStoryFromPeer);
+      const onChatMessage = (payload = {}) => {
+        pushChatMessage(payload);
+      };
+      channel.bind('client-chat-message', onChatMessage);
+      channel.bind('chat-message', onChatMessage);
       channel.bind("pusher:subscription_succeeded", () => {
         const list = [];
         channel.members.each((m) => list.push({ id: m.id, name: m.info?.name }));
@@ -402,14 +474,18 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
             });
           }).catch(()=>{});
         // Ask others for current state (e.g., revealed) using client events
-        try { channel.trigger && channel.trigger('client-sync-request', { from: user.id }); } catch {}
+        try {
+          if (channel.trigger) channel.trigger('client-sync-request', { from: user.id });
+        } catch {}
         // Clear any stale vote for myself across peers (e.g., after refresh)
-        try { channel.trigger && channel.trigger('client-clear-my-vote', { userId: user.id }); } catch {}
+        try {
+          if (channel.trigger) channel.trigger('client-clear-my-vote', { userId: user.id });
+        } catch {}
         // Ask others to share their spectator state (for refreshed/new client).
         // Defer slightly to ensure our local event bindings are ready.
         try {
-          setTimeout(() => { channel.trigger && channel.trigger('client-spectator-sync', { from: user.id }); }, 150);
-          setTimeout(() => { channel.trigger && channel.trigger('client-spectator-sync', { from: user.id }); }, 700);
+          setTimeout(() => { if (channel.trigger) channel.trigger('client-spectator-sync', { from: user.id }); }, 150);
+          setTimeout(() => { if (channel.trigger) channel.trigger('client-spectator-sync', { from: user.id }); }, 700);
         } catch {}
       });
       channel.bind("pusher:member_added", (m) => {
@@ -447,7 +523,7 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
         }
         // If the round is already revealed, immediately notify the newcomer to reveal
         if (revealedRef.current) {
-          try { channel.trigger && channel.trigger('client-reveal-now', { by: user?.id }); } catch {}
+          try { if (channel.trigger) channel.trigger('client-reveal-now', { by: user?.id }); } catch {}
           // Optional server fallback to ensure delivery in case client events are blocked
           try {
             fetch(`/api/session/${encodeURIComponent(sessionId)}/reveal`, {
@@ -459,10 +535,10 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
         }
       });
       // If someone asks for sync, and we've already revealed, notify them to reveal
-      channel.bind('client-sync-request', (payload) => {
+      channel.bind('client-sync-request', () => {
         try {
           if (revealedRef.current) {
-            channel.trigger && channel.trigger('client-reveal-now', { by: user.id });
+            if (channel.trigger) channel.trigger('client-reveal-now', { by: user.id });
           }
         } catch {}
       });
@@ -471,13 +547,13 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
         setRevealed(true);
       });
       // When someone requests spectator sync, respond with our current state if any
-      channel.bind('client-spectator-sync', (payload) => {
+      channel.bind('client-spectator-sync', () => {
         try {
           const selfId = user?.id;
           if (!selfId) return;
           const spec = Boolean(spectatorsRef.current[selfId]);
           if (spec) {
-            channel.trigger && channel.trigger('client-spectator', { userId: selfId, spectator: true });
+            if (channel.trigger) channel.trigger('client-spectator', { userId: selfId, spectator: true });
             fetch(`/api/session/${encodeURIComponent(sessionId)}/spectator`, {
               method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: selfId, spectator: true })
             }).catch(() => {});
@@ -599,13 +675,15 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
     return () => {
       try { channel?.unbind?.('client-active-story', onActiveStoryFromPeer); } catch {}
       try { channel?.unbind?.('active-story', onActiveStoryFromPeer); } catch {}
+      try { channel?.unbind?.('client-chat-message', onChatMessage); } catch {}
+      try { channel?.unbind?.('chat-message', onChatMessage); } catch {}
       try { channel?.unbind?.('client-name-change', onNameChange); } catch {}
       try { channel?.unbind?.('name-change', onNameChange); } catch {}
       try { channel && pusher?.unsubscribe?.(`presence-session-${sessionId}`); } catch {}
       try { pusher?.disconnect?.(); } catch {}
       try { channelRef.current = null; } catch {}
     };
-  }, [user?.id, user?.name, sessionId, pusherKey, pusherCluster, onUserChange, ensureStoryMeta, emitActiveStory, persistActiveStoryMeta]);
+  }, [user?.id, user?.name, sessionId, pusherKey, pusherCluster, onUserChange, ensureStoryMeta, emitActiveStory, persistActiveStoryMeta, pushChatMessage]);
 
   // active story wiring
   useEffect(() => {
@@ -1909,7 +1987,17 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
         </div>
       )}
 
-      
+      <div className="pointer-events-none fixed bottom-6 left-6 z-40">
+        <div className="pointer-events-auto">
+          <ChatWidget
+            open={chatOpen}
+            messages={chatMessages}
+            unreadCount={chatUnread}
+            onToggle={handleChatToggle}
+            onSubmit={handleChatSubmit}
+          />
+        </div>
+      </div>
     </div>
   );
 }
