@@ -1,7 +1,7 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 "use client";
 
-import { useEffect, useMemo, useState, useRef } from "react";
+import { useEffect, useMemo, useState, useRef, useCallback } from "react";
 import gsap from "gsap";
 import Header from "../../components/header";
 import FloatingNumbers from "../../components/floating-numbers";
@@ -87,6 +87,28 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
   };
   const showFloats = Boolean(enableFloatNumbers);
   useEffect(() => { activeStoryRef.current = activeStoryId; }, [activeStoryId]);
+
+  const emitActiveStory = useCallback((storyId, roundActive) => {
+    const channel = channelRef.current;
+    const selfId = userRef.current?.id || null;
+    const nextRoundActive = typeof roundActive === 'boolean' ? roundActive : Boolean(storyId);
+    const payload = {
+      storyId: storyId || null,
+      roundActive: nextRoundActive,
+      by: selfId,
+    };
+    if (channel && typeof channel.trigger === 'function') {
+      try { channel.trigger('client-active-story', payload); } catch {}
+    }
+    if (!sessionId || !selfId) return;
+    try {
+      fetch(`/api/session/${encodeURIComponent(sessionId)}/active-story`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: selfId, storyId: storyId || null, roundActive: nextRoundActive }),
+      }).catch(() => {});
+    } catch {}
+  }, [sessionId]);
 
   // Spectator eye blink animation
   useEffect(() => {
@@ -218,6 +240,21 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
       channel = pusher.subscribe(`presence-session-${sessionId}`);
       // expose channel for client-trigger events elsewhere (e.g., deselect)
       try { channelRef.current = channel; } catch {}
+      const forwardActiveStory = (payload = {}, source = 'sync') => {
+        const rawId = payload?.storyId;
+        const storyId = (typeof rawId === 'string' && rawId.trim()) ? rawId : null;
+        const roundActive = typeof payload?.roundActive === 'boolean' ? payload.roundActive : Boolean(storyId);
+        try {
+          window.dispatchEvent(new CustomEvent('spz:active-story', {
+            detail: { sessionId, storyId, origin: source, roundActive }
+          }));
+        } catch {}
+      };
+      const onActiveStoryFromPeer = (payload = {}) => {
+        forwardActiveStory(payload, 'sync');
+      };
+      channel.bind('client-active-story', onActiveStoryFromPeer);
+      channel.bind('active-story', onActiveStoryFromPeer);
       channel.bind("pusher:subscription_succeeded", () => {
         const list = [];
         channel.members.each((m) => list.push({ id: m.id, name: m.info?.name }));
@@ -284,6 +321,12 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
           try { channelRef.current?.trigger?.('client-spectator', { userId: user?.id, spectator: true }); } catch {}
           try { fetch(`/api/session/${encodeURIComponent(sessionId)}/spectator`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: user?.id, spectator: true }) }); } catch {}
         }
+        const activeId = activeStoryRef.current;
+        if (activeId) {
+          try {
+            setTimeout(() => emitActiveStory(activeId, !revealedRef.current), 160);
+          } catch {}
+        }
         // If the round is already revealed, immediately notify the newcomer to reveal
         if (revealedRef.current) {
           try { channel.trigger && channel.trigger('client-reveal-now', { by: user?.id }); } catch {}
@@ -326,7 +369,9 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
       const onResetRound = (payload = {}) => {
         resetRoundLocal();
         if (Object.prototype.hasOwnProperty.call(payload, 'storyId')) {
-          setActiveStoryId(payload.storyId || null);
+          const nextStoryId = payload.storyId || null;
+          setActiveStoryId(nextStoryId);
+          forwardActiveStory({ storyId: nextStoryId, roundActive: Boolean(nextStoryId) }, 'sync');
         }
       };
       channel.bind('client-reset-round', onResetRound);
@@ -421,6 +466,8 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
       });
     })();
     return () => {
+      try { channel?.unbind?.('client-active-story', onActiveStoryFromPeer); } catch {}
+      try { channel?.unbind?.('active-story', onActiveStoryFromPeer); } catch {}
       try { channel?.unbind?.('client-name-change', onNameChange); } catch {}
       try { channel?.unbind?.('name-change', onNameChange); } catch {}
       try { channel && pusher?.unsubscribe?.(`presence-session-${sessionId}`); } catch {}
@@ -436,9 +483,16 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
     const onActive = (e) => {
       const detail = e?.detail || {};
       if (detail.sessionId !== sessionId) return;
-      const nextStoryId = detail.storyId || null;
+      let nextStoryId = null;
+      if (typeof detail.storyId === 'string' && detail.storyId.trim()) nextStoryId = detail.storyId;
+      if (detail.storyId === null) nextStoryId = null;
       const origin = detail.origin || 'drawer';
+      const roundActive = typeof detail.roundActive === 'boolean' ? detail.roundActive : Boolean(nextStoryId);
       setActiveStoryId(nextStoryId);
+      try { activeStoryRef.current = nextStoryId; } catch {}
+      if (origin !== 'sync') {
+        emitActiveStory(nextStoryId, roundActive);
+      }
       if (origin === 'drawer') {
         resetRoundLocal();
         try { channelRef.current?.trigger?.('client-reset-round', { storyId: nextStoryId }); } catch {}

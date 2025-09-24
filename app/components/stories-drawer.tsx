@@ -8,7 +8,7 @@ const NUMERIC_OPTIONS = [0, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89] as const;
 
 type Story = { id: string; key: string; title: string; avg?: number | null; manual?: boolean };
 type StoryAvgDetail = { sessionId: string; storyId: string; avg?: number | null; manual?: boolean };
-type ActiveStoryEventDetail = { sessionId: string; storyId: string; origin?: 'drawer' | 'auto' | 'sync' };
+type ActiveStoryEventDetail = { sessionId: string; storyId: string | null; origin?: 'drawer' | 'auto' | 'sync'; roundActive?: boolean };
 
 // Helper: map any average to the immediate higher (ceiling) option in NUMERIC_OPTIONS
 const ceilOptionFor = (avg?: number | null) => {
@@ -114,6 +114,30 @@ function StoriesList({ sessionId, initial }: { sessionId?: string; initial: Stor
     });
   }, [initial, sessionId]);
 
+  React.useEffect(() => {
+    if (!sessionId) return;
+    const key = `spz_active_story_${sessionId}`;
+    const handleActiveStory = (event: Event) => {
+      const detail = (event as CustomEvent<ActiveStoryEventDetail>).detail;
+      if (!detail || detail.sessionId !== sessionId) return;
+      const incomingId = typeof detail.storyId === 'string' && detail.storyId ? detail.storyId : null;
+      const origin = detail.origin ?? 'sync';
+      const roundActiveFlag = typeof detail.roundActive === 'boolean'
+        ? detail.roundActive
+        : (incomingId ? Boolean(storiesRef.current.find((story) => story.id === incomingId && typeof story.avg !== 'number')) : false);
+      setActiveId(incomingId);
+      setUserSelectedActive(origin === 'auto' ? false : Boolean(incomingId));
+      setAwaitingResult(roundActiveFlag);
+      if (incomingId) {
+        try { localStorage.setItem(key, incomingId); } catch {}
+      } else {
+        try { localStorage.removeItem(key); } catch {}
+      }
+    };
+    window.addEventListener('spz:active-story', handleActiveStory);
+    return () => window.removeEventListener('spz:active-story', handleActiveStory);
+  }, [sessionId]);
+
   
 
   // seed from cache instantly, then fetch fresh
@@ -152,13 +176,19 @@ function StoriesList({ sessionId, initial }: { sessionId?: string; initial: Stor
 
     if (stories.length === 1) {
       const loneStory = stories[0];
-      if (!activeExists || activeId !== loneStory.id) {
+      const awaiting = typeof loneStory.avg === 'number' ? false : true;
+      const shouldSync = !activeExists || activeId !== loneStory.id;
+      if (shouldSync) {
         setActiveId(loneStory.id);
         try { localStorage.setItem(key, loneStory.id); } catch {}
-      window.dispatchEvent(new CustomEvent<ActiveStoryEventDetail>('spz:active-story', { detail: { sessionId, storyId: loneStory.id, origin: 'auto' } }));
       }
       setUserSelectedActive(false);
-      setAwaitingResult(typeof loneStory.avg === 'number' ? false : true);
+      setAwaitingResult(awaiting);
+      if (shouldSync) {
+        window.dispatchEvent(new CustomEvent<ActiveStoryEventDetail>('spz:active-story', {
+          detail: { sessionId, storyId: loneStory.id, origin: 'auto', roundActive: awaiting }
+        }));
+      }
       return;
     }
 
@@ -221,15 +251,15 @@ function StoriesList({ sessionId, initial }: { sessionId?: string; initial: Stor
     return () => window.removeEventListener('spz:story-avg', onStoryAvg);
   }, [sessionId, activeId]);
 
-  function selectActive(id: string){
-    if (!sessionId) return;
-    setActiveId(id);
-    setUserSelectedActive(true);
-    setAwaitingResult(true);
-    const key = `spz_active_story_${sessionId}`;
-    try { localStorage.setItem(key, id); } catch {}
-    window.dispatchEvent(new CustomEvent<ActiveStoryEventDetail>('spz:active-story', { detail: { sessionId, storyId: id, origin: 'drawer' } }));
-  }
+function selectActive(id: string){
+  if (!sessionId) return;
+  setActiveId(id);
+  setUserSelectedActive(true);
+  setAwaitingResult(true);
+  const key = `spz_active_story_${sessionId}`;
+  try { localStorage.setItem(key, id); } catch {}
+  window.dispatchEvent(new CustomEvent<ActiveStoryEventDetail>('spz:active-story', { detail: { sessionId, storyId: id, origin: 'drawer', roundActive: true } }));
+}
 
   return (
     <div className="space-y-3">
