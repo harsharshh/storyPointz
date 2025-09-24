@@ -498,14 +498,14 @@ export default function UserMenu({ userName = 'Guest user', variant = 'avatar', 
             <div className="flex items-center justify-between gap-3 border-b border-black/5 px-5 py-4 dark:border-white/10">
             <div className="flex items-center gap-2">
               <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 8h10M7 12h10M7 16h6"/></svg>
-              <h2 className="text-base font-semibold">{sessionsMode === 'mine' ? 'My Sessions' : 'Team Sessions'}</h2>
+              <h2 className="text-base font-semibold text-gray-900 dark:text-white">{sessionsMode === 'mine' ? 'My Sessions' : 'Team Sessions'}</h2>
             </div>
               <div className="flex items-center gap-2">
-                <button onClick={() => fetchSessions(sessionsMode)} className="inline-flex items-center gap-2 rounded-lg border border-black/10 px-3 py-1.5 text-sm font-medium hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/10" disabled={sessLoading}>
+                <button onClick={() => fetchSessions(sessionsMode)} className="inline-flex items-center gap-2 rounded-lg border border-black/10 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-black/5 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-white/10 dark:text-white/80 dark:hover:bg-white/10" disabled={sessLoading}>
                   <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 1 1-9-9"/><path d="M21 3v9h-9"/></svg>
                   {sessLoading ? 'Refreshing…' : 'Refresh'}
                 </button>
-                <button onClick={() => setShowSessions(false)} className="rounded-lg p-2 hover:bg-black/5 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:hover:bg-white/10" aria-label="Close">
+                <button onClick={() => setShowSessions(false)} className="rounded-lg p-2 text-gray-700 hover:bg-black/5 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-white dark:hover:bg-white/10" aria-label="Close">
                   <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
                 </button>
               </div>
@@ -517,10 +517,10 @@ export default function UserMenu({ userName = 'Guest user', variant = 'avatar', 
                 <div className="mb-3 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-600 dark:text-red-400">{sessError}</div>
               )}
               {sessLoading && !sessions && (
-                <div className="py-8 text-center text-sm opacity-70">Loading your sessions…</div>
+                <div className="py-8 text-center text-sm text-gray-600 opacity-80 dark:text-white/70">Loading your sessions…</div>
               )}
               {!sessLoading && sessions && sessions.length === 0 && (
-                <div className="py-8 text-center text-sm opacity-70">No sessions found.</div>
+                <div className="py-8 text-center text-sm text-gray-600 opacity-80 dark:text-white/70">No sessions found.</div>
               )}
               {sessions && sessions.length > 0 && (
                 <ul className="divide-y divide-black/5 dark:divide-white/10">
@@ -529,12 +529,12 @@ export default function UserMenu({ userName = 'Guest user', variant = 'avatar', 
                     return (
                       <li key={s.id} className="flex flex-wrap items-center gap-3 py-3">
                         <div className="min-w-0 flex-1">
-                          <div className="truncate text-sm font-medium">{s.name || 'Untitled session'}</div>
-                          <div className="truncate text-xs text-gray-500">{s.id}</div>
+                          <div className="truncate text-sm font-medium text-gray-900 dark:text-white">{s.name || 'Untitled session'}</div>
+                          <div className="truncate text-xs text-gray-500 dark:text-white/60">{s.id}</div>
                         </div>
                         <div className="flex items-center gap-2">
                           <button
-                            className="cursor-pointer rounded-lg border border-black/10 px-3 py-1.5 text-xs font-medium hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/10"
+                            className="cursor-pointer rounded-lg border border-black/10 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-black/5 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-white/10 dark:text-white/80 dark:hover:bg-white/10"
                             onClick={async () => {
                           try {
                             await navigator.clipboard.writeText(href);
