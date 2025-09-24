@@ -497,7 +497,7 @@ export default function UserMenu({ userName = 'Guest user', variant = 'avatar', 
             {/* Header */}
             <div className="flex items-center justify-between gap-3 border-b border-black/5 px-5 py-4 dark:border-white/10">
             <div className="flex items-center gap-2">
-              <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 8h10M7 12h10M7 16h6"/></svg>
+              <svg viewBox="0 0 24 24" className="h-5 w-5 text-gray-700 dark:text-white/80" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 8h10M7 12h10M7 16h6"/></svg>
               <h2 className="text-base font-semibold text-gray-900 dark:text-white">{sessionsMode === 'mine' ? 'My Sessions' : 'Team Sessions'}</h2>
             </div>
               <div className="flex items-center gap-2">
