@@ -78,11 +78,18 @@ export default function Header({ userName, sessionName, sessionId, onUserNameCha
 
         {/* Right actions */}
         <div className="flex items-center gap-3">
+          {(userName || sessionId) && (
+            <UserMenu
+              userName={userName}
+              variant="chip"
+              sessionId={sessionId}
+              onNameUpdated={onUserNameChange}
+            />
+          )}
           {pathname !== '/' && pathname !== '/session/new' && (
             <>
               {/* Desktop actions */}
               <div className="hidden items-center gap-3 sm:flex">
-                <UserMenu userName={userName} variant="chip" sessionId={sessionId} onNameUpdated={onUserNameChange} />
                 <button
                   type="button"
                   onClick={() => setInviteOpen(true)}

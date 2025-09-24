@@ -8,7 +8,14 @@ const NUMERIC_OPTIONS = [0, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89] as const;
 
 type Story = { id: string; key: string; title: string; avg?: number | null; manual?: boolean };
 type StoryAvgDetail = { sessionId: string; storyId: string; avg?: number | null; manual?: boolean };
-type ActiveStoryEventDetail = { sessionId: string; storyId: string; origin?: 'drawer' | 'auto' | 'sync' };
+type StorySummary = { id: string; key: string; title: string };
+type ActiveStoryEventDetail = {
+  sessionId: string;
+  storyId: string | null;
+  origin?: 'drawer' | 'auto' | 'sync';
+  roundActive?: boolean;
+  story?: StorySummary | null;
+};
 
 // Helper: map any average to the immediate higher (ceiling) option in NUMERIC_OPTIONS
 const ceilOptionFor = (avg?: number | null) => {
@@ -76,6 +83,7 @@ function StoriesList({ sessionId, initial }: { sessionId?: string; initial: Stor
   const [stories, setStories] = React.useState(initial);
   const storiesRef = React.useRef(initial);
   const manualOverrideRef = React.useRef<Record<string, boolean>>({});
+  const activeMetaKey = React.useMemo(() => (sessionId ? `spz_active_story_meta_${sessionId}` : null), [sessionId]);
   React.useEffect(() => {
     storiesRef.current = stories;
     const manualMap = manualOverrideRef.current;
@@ -101,10 +109,11 @@ function StoriesList({ sessionId, initial }: { sessionId?: string; initial: Stor
     if (prev && prev !== sessionId) {
       storiesCache.delete(prev);
       try { localStorage.removeItem(`spz_active_story_${prev}`); } catch {}
+      try { localStorage.removeItem(`spz_active_story_meta_${prev}`); } catch {}
       manualOverrideRef.current = {};
     }
     previousSessionRef.current = sessionId || undefined;
-  }, [sessionId]);
+  }, [sessionId, activeMetaKey]);
   React.useEffect(() => {
     setStories(initial);
     storiesRef.current = initial;
@@ -113,6 +122,44 @@ function StoriesList({ sessionId, initial }: { sessionId?: string; initial: Stor
       if (story.manual) manualMap[story.id] = true; else delete manualMap[story.id];
     });
   }, [initial, sessionId]);
+
+  React.useEffect(() => {
+    if (!sessionId) return;
+    const key = `spz_active_story_${sessionId}`;
+    const handleActiveStory = (event: Event) => {
+      const detail = (event as CustomEvent<ActiveStoryEventDetail>).detail;
+      if (!detail || detail.sessionId !== sessionId) return;
+      const incomingId = typeof detail.storyId === 'string' && detail.storyId ? detail.storyId : null;
+      const origin = detail.origin ?? 'sync';
+      const roundActiveFlag = typeof detail.roundActive === 'boolean'
+        ? detail.roundActive
+        : (incomingId ? Boolean(storiesRef.current.find((story) => story.id === incomingId && typeof story.avg !== 'number')) : false);
+      setActiveId(incomingId);
+      setUserSelectedActive(origin === 'auto' ? false : Boolean(incomingId));
+      setAwaitingResult(roundActiveFlag);
+      if (incomingId) {
+        try { localStorage.setItem(key, incomingId); } catch {}
+        if (activeMetaKey) {
+          const detailStory = detail.story;
+          if (detailStory && typeof detailStory === 'object') {
+            const summary: StorySummary = {
+              id: typeof detailStory.id === 'string' ? detailStory.id : incomingId,
+              key: typeof detailStory.key === 'string' ? detailStory.key : '',
+              title: typeof detailStory.title === 'string' ? detailStory.title : '',
+            };
+            try { localStorage.setItem(activeMetaKey, JSON.stringify(summary)); } catch {}
+          }
+        }
+      } else {
+        try { localStorage.removeItem(key); } catch {}
+        if (activeMetaKey) {
+          try { localStorage.removeItem(activeMetaKey); } catch {}
+        }
+      }
+    };
+    window.addEventListener('spz:active-story', handleActiveStory);
+    return () => window.removeEventListener('spz:active-story', handleActiveStory);
+  }, [sessionId, activeMetaKey]);
 
   
 
@@ -152,13 +199,23 @@ function StoriesList({ sessionId, initial }: { sessionId?: string; initial: Stor
 
     if (stories.length === 1) {
       const loneStory = stories[0];
-      if (!activeExists || activeId !== loneStory.id) {
+      const awaiting = typeof loneStory.avg === 'number' ? false : true;
+      const shouldSync = !activeExists || activeId !== loneStory.id;
+      if (shouldSync) {
         setActiveId(loneStory.id);
         try { localStorage.setItem(key, loneStory.id); } catch {}
-      window.dispatchEvent(new CustomEvent<ActiveStoryEventDetail>('spz:active-story', { detail: { sessionId, storyId: loneStory.id, origin: 'auto' } }));
+        if (activeMetaKey) {
+          try { localStorage.setItem(activeMetaKey, JSON.stringify({ id: loneStory.id, key: loneStory.key, title: loneStory.title })); } catch {}
+        }
       }
       setUserSelectedActive(false);
-      setAwaitingResult(typeof loneStory.avg === 'number' ? false : true);
+      setAwaitingResult(awaiting);
+      if (shouldSync) {
+        const summary: StorySummary = { id: loneStory.id, key: loneStory.key, title: loneStory.title };
+        window.dispatchEvent(new CustomEvent<ActiveStoryEventDetail>('spz:active-story', {
+          detail: { sessionId, storyId: loneStory.id, origin: 'auto', roundActive: awaiting, story: summary }
+        }));
+      }
       return;
     }
 
@@ -166,6 +223,9 @@ function StoriesList({ sessionId, initial }: { sessionId?: string; initial: Stor
       if (activeId !== null) setActiveId(null);
       if (stored) {
         try { localStorage.removeItem(key); } catch {}
+      }
+      if (activeMetaKey) {
+        try { localStorage.removeItem(activeMetaKey); } catch {}
       }
       if (userSelectedActive) setUserSelectedActive(false);
       if (awaitingResult) setAwaitingResult(false);
@@ -178,6 +238,9 @@ function StoriesList({ sessionId, initial }: { sessionId?: string; initial: Stor
       if (stored) {
         try { localStorage.removeItem(key); } catch {}
       }
+      if (activeMetaKey) {
+        try { localStorage.removeItem(activeMetaKey); } catch {}
+      }
       if (awaitingResult) setAwaitingResult(false);
       return;
     }
@@ -187,10 +250,13 @@ function StoriesList({ sessionId, initial }: { sessionId?: string; initial: Stor
       if (stored) {
         try { localStorage.removeItem(key); } catch {}
       }
+      if (activeMetaKey) {
+        try { localStorage.removeItem(activeMetaKey); } catch {}
+      }
       setUserSelectedActive(false);
       if (awaitingResult) setAwaitingResult(false);
     }
-  }, [sessionId, stories, activeId, userSelectedActive, awaitingResult]);
+  }, [sessionId, stories, activeId, userSelectedActive, awaitingResult, activeMetaKey]);
 
   // Listen for story average update events to update avg on the fly
   React.useEffect(() => {
@@ -221,15 +287,22 @@ function StoriesList({ sessionId, initial }: { sessionId?: string; initial: Stor
     return () => window.removeEventListener('spz:story-avg', onStoryAvg);
   }, [sessionId, activeId]);
 
-  function selectActive(id: string){
-    if (!sessionId) return;
-    setActiveId(id);
-    setUserSelectedActive(true);
-    setAwaitingResult(true);
-    const key = `spz_active_story_${sessionId}`;
-    try { localStorage.setItem(key, id); } catch {}
-    window.dispatchEvent(new CustomEvent<ActiveStoryEventDetail>('spz:active-story', { detail: { sessionId, storyId: id, origin: 'drawer' } }));
+function selectActive(story: Story){
+  if (!sessionId) return;
+  const id = story.id;
+  setActiveId(id);
+  setUserSelectedActive(true);
+  setAwaitingResult(true);
+  const key = `spz_active_story_${sessionId}`;
+  try { localStorage.setItem(key, id); } catch {}
+  const summary: StorySummary = { id: story.id, key: story.key, title: story.title };
+  if (activeMetaKey) {
+    try { localStorage.setItem(activeMetaKey, JSON.stringify(summary)); } catch {}
   }
+  window.dispatchEvent(new CustomEvent<ActiveStoryEventDetail>('spz:active-story', {
+    detail: { sessionId, storyId: id, origin: 'drawer', roundActive: true, story: summary }
+  }));
+}
 
   return (
     <div className="space-y-3">
@@ -288,6 +361,7 @@ function StoriesList({ sessionId, initial }: { sessionId?: string; initial: Stor
                 if (sessionId) {
                   const key = `spz_active_story_${sessionId}`;
                   try { localStorage.removeItem(key); } catch {}
+                  try { localStorage.removeItem(`spz_active_story_meta_${sessionId}`); } catch {}
                 }
               }
 
@@ -312,13 +386,14 @@ function StoriesList({ sessionId, initial }: { sessionId?: string; initial: Stor
                   setAwaitingResult(prevAwaiting);
                   if (sessionId) {
                     try { localStorage.setItem(`spz_active_story_${sessionId}`, removedStory.id); } catch {}
+                    try { localStorage.setItem(`spz_active_story_meta_${sessionId}`, JSON.stringify({ id: removedStory.id, key: removedStory.key, title: removedStory.title })); } catch {}
                   }
                 }
               };
             }}
             isActive={activeId === s.id}
             awaitingResult={awaitingResult && activeId === s.id}
-            onSelectActive={() => selectActive(s.id)}
+            onSelectActive={() => selectActive(s)}
           />
         ))
       )}
