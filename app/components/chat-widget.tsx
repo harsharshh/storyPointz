@@ -41,6 +41,7 @@ export default function ChatWidget({
 }: ChatWidgetProps = {}) {
   const [internalOpen, setInternalOpen] = useState(false);
   const open = typeof controlledOpen === "boolean" ? controlledOpen : internalOpen;
+  const [emojiOpen, setEmojiOpen] = useState(false);
 
   const setOpenState = useCallback(
     (next: boolean) => {
@@ -63,6 +64,8 @@ export default function ChatWidget({
   const buttonRef = useRef<HTMLButtonElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const previousUnreadRef = useRef(unreadCount);
+  const emojiButtonRef = useRef<HTMLButtonElement | null>(null);
+  const emojiPanelRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const node = iconRef.current;
@@ -98,6 +101,19 @@ export default function ChatWidget({
   }, [open, close]);
 
   useEffect(() => {
+    if (!emojiOpen) return;
+    const onClick = (event: MouseEvent) => {
+      const target = event.target as Node | null;
+      if (emojiPanelRef.current?.contains(target) || emojiButtonRef.current?.contains(target)) {
+        return;
+      }
+      setEmojiOpen(false);
+    };
+    window.addEventListener("mousedown", onClick);
+    return () => window.removeEventListener("mousedown", onClick);
+  }, [emojiOpen]);
+
+  useEffect(() => {
     if (!open) return;
     const panel = panelRef.current;
     if (!panel) return;
@@ -113,6 +129,21 @@ export default function ChatWidget({
       requestAnimationFrame(() => inputRef.current?.focus());
     }
   }, [open]);
+
+  const appendEmoji = useCallback((emoji: string) => {
+    const input = inputRef.current;
+    if (!input) return;
+    const start = input.selectionStart ?? input.value.length;
+    const end = input.selectionEnd ?? input.value.length;
+    const value = input.value;
+    const nextValue = value.slice(0, start) + emoji + value.slice(end);
+    input.value = nextValue;
+    const cursor = start + emoji.length;
+    requestAnimationFrame(() => {
+      input.focus();
+      input.setSelectionRange(cursor, cursor);
+    });
+  }, []);
 
   const renderedMessages = useMemo(() => {
     if (!messages.length) return null;
@@ -135,6 +166,7 @@ export default function ChatWidget({
     if (!value) return;
     onSubmit?.(value);
     input.value = "";
+    setEmojiOpen(false);
   };
 
   return (
@@ -200,7 +232,16 @@ export default function ChatWidget({
           </div>
 
           <form onSubmit={handleSubmit} className="border-t border-black/5 px-3 py-3 dark:border-white/10">
-            <div className="flex items-center gap-2 rounded-2xl border border-black/10 bg-white/90 px-2 py-2 dark:border-white/10 dark:bg-white/10">
+            <div className="relative flex items-center gap-2 rounded-2xl border border-black/10 bg-white/90 px-2 py-2 dark:border-white/10 dark:bg-white/10">
+              <button
+                ref={emojiButtonRef}
+                type="button"
+                onClick={() => setEmojiOpen((v) => !v)}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-xl text-lg transition hover:bg-black/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:hover:bg-white/5"
+                aria-label="Insert emoji"
+              >
+                ☺︎
+              </button>
               <input
                 ref={inputRef}
                 type="text"
@@ -217,6 +258,31 @@ export default function ChatWidget({
                   <path d="M22 2 11 13" />
                 </svg>
               </button>
+
+              {emojiOpen && (
+                <div
+                  ref={emojiPanelRef}
+                  className="absolute bottom-14 left-0 z-10 w-48 rounded-2xl border border-black/10 bg-white/95 p-2 shadow-xl backdrop-blur dark:border-white/10 dark:bg-gray-900/95"
+                  style={{ WebkitBackdropFilter: "blur(12px)", backdropFilter: "blur(12px)" }}
+                >
+                  <div className="grid grid-cols-6 gap-1 text-xl">
+                    {['😀','😁','😂','🤣','😊','😍','🤔','🤩','😎','😴','👍','🙌','🔥','🚀','💡','🎯','✅','❤️'].map((emo) => (
+                      <button
+                        key={emo}
+                        type="button"
+                        onClick={() => {
+                          appendEmoji(emo);
+                          setEmojiOpen(false);
+                        }}
+                        className="grid h-8 w-8 place-items-center rounded-lg transition hover:bg-black/10 dark:hover:bg-white/10"
+                        aria-label={`Insert ${emo}`}
+                      >
+                        {emo}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </form>
         </div>
