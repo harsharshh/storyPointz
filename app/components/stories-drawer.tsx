@@ -161,8 +161,6 @@ function StoriesList({ sessionId, initial }: { sessionId?: string; initial: Stor
     return () => window.removeEventListener('spz:active-story', handleActiveStory);
   }, [sessionId, activeMetaKey]);
 
-  
-
   // seed from cache instantly, then fetch fresh
   React.useEffect(() => {
     if (!sessionId) {
