@@ -161,8 +161,6 @@ function StoriesList({ sessionId, initial }: { sessionId?: string; initial: Stor
     return () => window.removeEventListener('spz:active-story', handleActiveStory);
   }, [sessionId, activeMetaKey]);
 
-  
-
   // seed from cache instantly, then fetch fresh
   React.useEffect(() => {
     if (!sessionId) {
@@ -584,8 +582,9 @@ function StoryCard({ story, sessionId, onUpdated, onDeleted, isActive, awaitingR
           </button>
           <button
             type="button"
+            disabled={deleting || isActive}
             onClick={async () => {
-              if (!sessionId || deleting) return;
+              if (!sessionId || deleting || isActive) return;
               setDeleting(true);
               let rollback: (() => void) | undefined;
               try {
@@ -608,7 +607,12 @@ function StoryCard({ story, sessionId, onUpdated, onDeleted, isActive, awaitingR
                 setDeleting(false);
               }
             }}
-            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-black/10 text-red-500 transition hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-400 dark:border-white/10 dark:text-red-400 dark:hover:bg-white/10"
+            className={[
+              "inline-flex h-8 w-8 items-center justify-center rounded-lg border border-black/10 text-red-500 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-red-400 dark:border-white/10 dark:text-red-400",
+              (deleting || isActive)
+                ? "cursor-not-allowed opacity-50"
+                : "hover:bg-red-50 dark:hover:bg-white/10"
+            ].join(" ")}
             title="Delete story"
           >
             {deleting ? (

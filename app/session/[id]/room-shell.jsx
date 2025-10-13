@@ -233,7 +233,11 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
   const emitActiveStory = useCallback((storyId, roundActive) => {
     const channel = channelRef.current;
     const selfId = userRef.current?.id || null;
-    const nextRoundActive = typeof roundActive === 'boolean' ? roundActive : Boolean(storyId);
+    const nextRoundActive = (() => {
+      if (typeof roundActive === 'boolean') return roundActive;
+      if (!storyId) return false;
+      return !revealedRef.current;
+    })();
     const cachedMeta = storyId ? storyMetaCacheRef.current?.[storyId] : null;
     const refMeta = activeStoryMetaRef.current;
     const summarySource = storyId && cachedMeta && cachedMeta.id === storyId
@@ -405,7 +409,15 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
       const forwardActiveStory = (payload = {}, source = 'sync') => {
         const rawId = payload?.storyId;
         const storyId = (typeof rawId === 'string' && rawId.trim()) ? rawId : null;
-        const roundActive = typeof payload?.roundActive === 'boolean' ? payload.roundActive : Boolean(storyId);
+        const rawRoundActive = typeof payload?.roundActive === 'boolean' ? payload.roundActive : null;
+        let roundActive;
+        if (rawRoundActive === null) {
+          roundActive = Boolean(storyId);
+        } else if (rawRoundActive === false && storyId && activeStoryRef.current === storyId && !revealedRef.current) {
+          roundActive = true;
+        } else {
+          roundActive = rawRoundActive;
+        }
         let storySummary = null;
         const payloadStory = payload?.story;
         if (payloadStory && typeof payloadStory === 'object' && payloadStory !== null) {
