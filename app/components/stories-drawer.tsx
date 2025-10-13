@@ -487,6 +487,7 @@ function StoryCard({ story, sessionId, onUpdated, onDeleted, isActive, awaitingR
   const selectedOpt = ceilOptionFor(story.avg ?? null);
   const hasPoints = typeof story.avg === 'number';
   const isAwaiting = Boolean(isActive && awaitingResult);
+  const disableDelete = Boolean(deleting || (isActive && awaitingResult));
 
   const handleSelectActive = () => {
     if (!onSelectActive) return;
@@ -584,8 +585,9 @@ function StoryCard({ story, sessionId, onUpdated, onDeleted, isActive, awaitingR
           </button>
           <button
             type="button"
+            disabled={disableDelete}
             onClick={async () => {
-              if (!sessionId || deleting) return;
+              if (!sessionId || disableDelete) return;
               setDeleting(true);
               let rollback: (() => void) | undefined;
               try {
@@ -608,7 +610,12 @@ function StoryCard({ story, sessionId, onUpdated, onDeleted, isActive, awaitingR
                 setDeleting(false);
               }
             }}
-            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-black/10 text-red-500 transition hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-400 dark:border-white/10 dark:text-red-400 dark:hover:bg-white/10"
+            className={[
+              "inline-flex h-8 w-8 items-center justify-center rounded-lg border border-black/10 text-red-500 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-red-400 dark:border-white/10 dark:text-red-400",
+              disableDelete
+                ? "cursor-not-allowed opacity-50"
+                : "hover:bg-red-50 dark:hover:bg-white/10"
+            ].join(" ")}
             title="Delete story"
           >
             {deleting ? (
