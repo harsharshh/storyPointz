@@ -12,7 +12,7 @@ type StorySummary = { id: string; key: string; title: string };
 type ActiveStoryEventDetail = {
   sessionId: string;
   storyId: string | null;
-  origin?: 'drawer' | 'auto' | 'sync';
+  origin?: 'drawer' | 'auto' | 'sync' | 'meta';
   roundActive?: boolean;
   story?: StorySummary | null;
 };
@@ -83,7 +83,6 @@ function StoriesList({ sessionId, initial }: { sessionId?: string; initial: Stor
   const [stories, setStories] = React.useState(initial);
   const storiesRef = React.useRef(initial);
   const manualOverrideRef = React.useRef<Record<string, boolean>>({});
-  const activeMetaKey = React.useMemo(() => (sessionId ? `spz_active_story_meta_${sessionId}` : null), [sessionId]);
   React.useEffect(() => {
     storiesRef.current = stories;
     const manualMap = manualOverrideRef.current;
@@ -98,22 +97,17 @@ function StoriesList({ sessionId, initial }: { sessionId?: string; initial: Stor
   const [activeId, setActiveId] = React.useState<string | null>(null);
   const [userSelectedActive, setUserSelectedActive] = React.useState(false);
   const [awaitingResult, setAwaitingResult] = React.useState(false);
+  const [initialActiveLoaded, setInitialActiveLoaded] = React.useState(false);
   const previousSessionRef = React.useRef<string | undefined>(undefined);
 
   React.useEffect(() => {
-    if (typeof window === 'undefined') {
-      previousSessionRef.current = sessionId || undefined;
-      return;
-    }
     const prev = previousSessionRef.current;
     if (prev && prev !== sessionId) {
       storiesCache.delete(prev);
-      try { localStorage.removeItem(`spz_active_story_${prev}`); } catch {}
-      try { localStorage.removeItem(`spz_active_story_meta_${prev}`); } catch {}
       manualOverrideRef.current = {};
     }
     previousSessionRef.current = sessionId || undefined;
-  }, [sessionId, activeMetaKey]);
+  }, [sessionId]);
   React.useEffect(() => {
     setStories(initial);
     storiesRef.current = initial;
@@ -125,7 +119,6 @@ function StoriesList({ sessionId, initial }: { sessionId?: string; initial: Stor
 
   React.useEffect(() => {
     if (!sessionId) return;
-    const key = `spz_active_story_${sessionId}`;
     const handleActiveStory = (event: Event) => {
       const detail = (event as CustomEvent<ActiveStoryEventDetail>).detail;
       if (!detail || detail.sessionId !== sessionId) return;
@@ -137,29 +130,10 @@ function StoriesList({ sessionId, initial }: { sessionId?: string; initial: Stor
       setActiveId(incomingId);
       setUserSelectedActive(origin === 'auto' ? false : Boolean(incomingId));
       setAwaitingResult(roundActiveFlag);
-      if (incomingId) {
-        try { localStorage.setItem(key, incomingId); } catch {}
-        if (activeMetaKey) {
-          const detailStory = detail.story;
-          if (detailStory && typeof detailStory === 'object') {
-            const summary: StorySummary = {
-              id: typeof detailStory.id === 'string' ? detailStory.id : incomingId,
-              key: typeof detailStory.key === 'string' ? detailStory.key : '',
-              title: typeof detailStory.title === 'string' ? detailStory.title : '',
-            };
-            try { localStorage.setItem(activeMetaKey, JSON.stringify(summary)); } catch {}
-          }
-        }
-      } else {
-        try { localStorage.removeItem(key); } catch {}
-        if (activeMetaKey) {
-          try { localStorage.removeItem(activeMetaKey); } catch {}
-        }
-      }
     };
     window.addEventListener('spz:active-story', handleActiveStory);
     return () => window.removeEventListener('spz:active-story', handleActiveStory);
-  }, [sessionId, activeMetaKey]);
+  }, [sessionId]);
 
   // seed from cache instantly, then fetch fresh
   React.useEffect(() => {
@@ -188,11 +162,55 @@ function StoriesList({ sessionId, initial }: { sessionId?: string; initial: Stor
     })();
   }, [sessionId, initial]);
 
+  React.useEffect(() => {
+    if (!sessionId) {
+      setInitialActiveLoaded(false);
+      return;
+    }
+    setInitialActiveLoaded(false);
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/session/${encodeURIComponent(sessionId)}/active-story`, { cache: 'no-store' });
+        if (!res.ok) {
+          setInitialActiveLoaded(true);
+          return;
+        }
+        const data = await res.json();
+        if (cancelled) return;
+        const fetchedId = typeof data?.storyId === 'string' && data.storyId.trim() ? data.storyId : null;
+        const roundFlag = Boolean(data?.roundActive);
+        const detailStoryRaw = data?.story;
+        const detailStory = (detailStoryRaw && typeof detailStoryRaw === 'object')
+          ? {
+              id: typeof detailStoryRaw.id === 'string' ? detailStoryRaw.id : fetchedId,
+              key: typeof detailStoryRaw.key === 'string' ? detailStoryRaw.key : '',
+              title: typeof detailStoryRaw.title === 'string' ? detailStoryRaw.title : '',
+            }
+          : (fetchedId ? { id: fetchedId, key: '', title: '' } : null);
+        setActiveId(fetchedId);
+        setUserSelectedActive(Boolean(fetchedId));
+        setAwaitingResult(Boolean(fetchedId && roundFlag));
+        if (fetchedId) {
+          try {
+            window.dispatchEvent(new CustomEvent<ActiveStoryEventDetail>('spz:active-story', {
+              detail: { sessionId, storyId: fetchedId, origin: 'sync', roundActive: roundFlag, story: detailStory }
+            }));
+          } catch {}
+        }
+      } catch {
+        // ignore fetch errors; active story will be derived locally
+      } finally {
+        if (!cancelled) setInitialActiveLoaded(true);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [sessionId]);
+
   // initialize active story when drawer opens
   React.useEffect(() => {
     if (!sessionId) return;
-    const key = `spz_active_story_${sessionId}`;
-    const stored = typeof window !== 'undefined' ? localStorage.getItem(key) : null;
+    if (!initialActiveLoaded) return;
     const activeExists = activeId ? stories.some(story => story.id === activeId) : false;
 
     if (stories.length === 1) {
@@ -201,10 +219,6 @@ function StoriesList({ sessionId, initial }: { sessionId?: string; initial: Stor
       const shouldSync = !activeExists || activeId !== loneStory.id;
       if (shouldSync) {
         setActiveId(loneStory.id);
-        try { localStorage.setItem(key, loneStory.id); } catch {}
-        if (activeMetaKey) {
-          try { localStorage.setItem(activeMetaKey, JSON.stringify({ id: loneStory.id, key: loneStory.key, title: loneStory.title })); } catch {}
-        }
       }
       setUserSelectedActive(false);
       setAwaitingResult(awaiting);
@@ -219,12 +233,6 @@ function StoriesList({ sessionId, initial }: { sessionId?: string; initial: Stor
 
     if (stories.length === 0) {
       if (activeId !== null) setActiveId(null);
-      if (stored) {
-        try { localStorage.removeItem(key); } catch {}
-      }
-      if (activeMetaKey) {
-        try { localStorage.removeItem(activeMetaKey); } catch {}
-      }
       if (userSelectedActive) setUserSelectedActive(false);
       if (awaitingResult) setAwaitingResult(false);
       return;
@@ -233,28 +241,16 @@ function StoriesList({ sessionId, initial }: { sessionId?: string; initial: Stor
     // Multiple stories: require explicit user choice unless already selected
     if (!userSelectedActive) {
       if (activeId !== null) setActiveId(null);
-      if (stored) {
-        try { localStorage.removeItem(key); } catch {}
-      }
-      if (activeMetaKey) {
-        try { localStorage.removeItem(activeMetaKey); } catch {}
-      }
       if (awaitingResult) setAwaitingResult(false);
       return;
     }
 
     if (!activeExists) {
       if (activeId !== null) setActiveId(null);
-      if (stored) {
-        try { localStorage.removeItem(key); } catch {}
-      }
-      if (activeMetaKey) {
-        try { localStorage.removeItem(activeMetaKey); } catch {}
-      }
       setUserSelectedActive(false);
       if (awaitingResult) setAwaitingResult(false);
     }
-  }, [sessionId, stories, activeId, userSelectedActive, awaitingResult, activeMetaKey]);
+  }, [sessionId, stories, activeId, userSelectedActive, awaitingResult, initialActiveLoaded]);
 
   // Listen for story average update events to update avg on the fly
   React.useEffect(() => {
@@ -291,12 +287,11 @@ function selectActive(story: Story){
   setActiveId(id);
   setUserSelectedActive(true);
   setAwaitingResult(true);
-  const key = `spz_active_story_${sessionId}`;
-  try { localStorage.setItem(key, id); } catch {}
-  const summary: StorySummary = { id: story.id, key: story.key, title: story.title };
-  if (activeMetaKey) {
-    try { localStorage.setItem(activeMetaKey, JSON.stringify(summary)); } catch {}
-  }
+  const summary: StorySummary = {
+    id: story.id,
+    key: typeof story.key === 'string' ? story.key : '',
+    title: story.title,
+  };
   window.dispatchEvent(new CustomEvent<ActiveStoryEventDetail>('spz:active-story', {
     detail: { sessionId, storyId: id, origin: 'drawer', roundActive: true, story: summary }
   }));
@@ -326,6 +321,25 @@ function selectActive(story: Story){
                 }
                 return next;
               });
+              if (normalized.id === activeId) {
+                const summary: StorySummary = {
+                  id: normalized.id,
+                  key: typeof normalized.key === 'string' ? normalized.key : '',
+                  title: normalized.title,
+                };
+                if (sessionId) {
+                  try {
+                    window.dispatchEvent(new CustomEvent<ActiveStoryEventDetail>('spz:active-story', {
+                      detail: {
+                        sessionId,
+                        storyId: normalized.id,
+                        origin: 'meta',
+                        story: summary,
+                      },
+                    }));
+                  } catch {}
+                }
+              }
               if (normalized.id === activeId && typeof normalized.avg === 'number') {
                 setAwaitingResult(false);
               }
@@ -357,9 +371,11 @@ function selectActive(story: Story){
                 setUserSelectedActive(false);
                 setAwaitingResult(false);
                 if (sessionId) {
-                  const key = `spz_active_story_${sessionId}`;
-                  try { localStorage.removeItem(key); } catch {}
-                  try { localStorage.removeItem(`spz_active_story_meta_${sessionId}`); } catch {}
+                  try {
+                    window.dispatchEvent(new CustomEvent<ActiveStoryEventDetail>('spz:active-story', {
+                      detail: { sessionId, storyId: null, origin: 'drawer', roundActive: false, story: null }
+                    }));
+                  } catch {}
                 }
               }
 
@@ -383,8 +399,12 @@ function selectActive(story: Story){
                   setUserSelectedActive(prevUserSelected);
                   setAwaitingResult(prevAwaiting);
                   if (sessionId) {
-                    try { localStorage.setItem(`spz_active_story_${sessionId}`, removedStory.id); } catch {}
-                    try { localStorage.setItem(`spz_active_story_meta_${sessionId}`, JSON.stringify({ id: removedStory.id, key: removedStory.key, title: removedStory.title })); } catch {}
+                    const summary: StorySummary = { id: removedStory.id, key: removedStory.key, title: removedStory.title };
+                    try {
+                      window.dispatchEvent(new CustomEvent<ActiveStoryEventDetail>('spz:active-story', {
+                        detail: { sessionId, storyId: removedStory.id, origin: 'drawer', roundActive: prevAwaiting, story: summary }
+                      }));
+                    } catch {}
                   }
                 }
               };

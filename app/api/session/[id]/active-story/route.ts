@@ -44,11 +44,61 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       storyTitle: summary?.title,
     };
 
+    const updateData = summary
+      ? {
+          activeStoryId: summary.id,
+          activeStoryKey: summary.key,
+          activeStoryTitle: summary.title,
+          ...(typeof roundActive === 'boolean' ? { activeStoryRoundActive: roundActive } : {}),
+        }
+      : {
+          activeStoryId: null,
+          activeStoryKey: null,
+          activeStoryTitle: null,
+          activeStoryRoundActive: false,
+        };
+
+    await prisma.session.update({
+      where: { id },
+      data: updateData,
+    });
+
     await pusherServer.trigger(`presence-session-${id}`, "active-story", payload);
 
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true, story: summary, storyId: normalizedStoryId, roundActive: payload.roundActive });
   } catch (e) {
     console.error("active story broadcast failed", e);
+    return NextResponse.json({ error: "server error" }, { status: 500 });
+  }
+}
+
+export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  const { id } = await ctx.params;
+  try {
+    const session = await prisma.session.findUnique({
+      where: { id },
+      select: {
+        activeStoryId: true,
+        activeStoryKey: true,
+        activeStoryTitle: true,
+        activeStoryRoundActive: true,
+      },
+    });
+    if (!session) {
+      return NextResponse.json({ storyId: null, roundActive: false, story: null });
+    }
+    const storyId = typeof session.activeStoryId === "string" && session.activeStoryId.trim() ? session.activeStoryId : null;
+    const summary = storyId
+      ? {
+          id: storyId,
+          key: typeof session.activeStoryKey === "string" ? session.activeStoryKey : "",
+          title: typeof session.activeStoryTitle === "string" ? session.activeStoryTitle : "",
+        }
+      : null;
+    const roundActive = Boolean(session.activeStoryRoundActive && storyId);
+    return NextResponse.json({ storyId, roundActive, story: summary });
+  } catch (e) {
+    console.error("active story fetch failed", e);
     return NextResponse.json({ error: "server error" }, { status: 500 });
   }
 }

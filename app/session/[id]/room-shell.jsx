@@ -65,20 +65,7 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
   useEffect(() => { activeStoryMetaRef.current = activeStoryMeta; }, [activeStoryMeta]);
   useEffect(() => { activeStoryRoundActiveRef.current = activeStoryRoundActive; }, [activeStoryRoundActive]);
   useEffect(() => { chatOpenRef.current = chatOpen; }, [chatOpen]);
-  const persistActiveStoryMeta = useCallback((summary) => {
-    if (!sessionId) return;
-    const metaKey = `spz_active_story_meta_${sessionId}`;
-    if (summary && typeof summary.id === 'string' && summary.id) {
-      const payload = {
-        id: summary.id,
-        key: typeof summary.key === 'string' ? summary.key : '',
-        title: typeof summary.title === 'string' ? summary.title : '',
-      };
-      try { localStorage.setItem(metaKey, JSON.stringify(payload)); } catch {}
-    } else {
-      try { localStorage.removeItem(metaKey); } catch {}
-    }
-  }, [sessionId]);
+  const persistActiveStoryMeta = useCallback(() => {}, [sessionId]);
   useEffect(() => {
     if (revealed) {
       setRevealTick((v) => v + 1);
@@ -699,32 +686,37 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
 
   // active story wiring
   useEffect(() => {
-    const key = `spz_active_story_${sessionId}`;
-    try {
-      const v = localStorage.getItem(key);
-      if (v) {
-        setActiveStoryId(v);
-        ensureStoryMeta(v, null);
-      }
-      if (sessionId) {
-        const metaRaw = localStorage.getItem(`spz_active_story_meta_${sessionId}`);
-        if (metaRaw) {
-          try {
-            const parsed = JSON.parse(metaRaw);
-            if (parsed && typeof parsed.id === 'string') {
-              const summary = {
-                id: parsed.id,
-                key: typeof parsed.key === 'string' ? parsed.key : '',
-                title: typeof parsed.title === 'string' ? parsed.title : '',
-              };
-              storyMetaCacheRef.current[summary.id] = summary;
-              activeStoryMetaRef.current = summary;
-              if (isMountedRef.current) setActiveStoryMeta(summary);
+    if (!sessionId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/session/${encodeURIComponent(sessionId)}/active-story`, { cache: "no-store" });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (cancelled) return;
+        const nextId = typeof data?.storyId === "string" && data.storyId.trim() ? data.storyId : null;
+        const roundActive = Boolean(data?.roundActive);
+        const detailStoryRaw = data?.story;
+        const detailStory = (detailStoryRaw && typeof detailStoryRaw === "object")
+          ? {
+              id: typeof detailStoryRaw.id === "string" ? detailStoryRaw.id : nextId,
+              key: typeof detailStoryRaw.key === "string" ? detailStoryRaw.key : "",
+              title: typeof detailStoryRaw.title === "string" ? detailStoryRaw.title : "",
             }
-          } catch {}
+          : null;
+        setActiveStoryId(nextId);
+        try { activeStoryRef.current = nextId; } catch {}
+        setActiveStoryRoundActive(Boolean(roundActive && nextId));
+        if (detailStory && detailStory.id) {
+          storyMetaCacheRef.current[detailStory.id] = detailStory;
+          activeStoryMetaRef.current = detailStory;
+          if (isMountedRef.current) setActiveStoryMeta(detailStory);
+        } else if (!nextId) {
+          activeStoryMetaRef.current = null;
+          if (isMountedRef.current) setActiveStoryMeta(null);
         }
-      }
-    } catch {}
+      } catch {}
+    })();
     const onActive = (e) => {
       const detail = e?.detail || {};
       if (detail.sessionId !== sessionId) return;
@@ -732,7 +724,10 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
       if (typeof detail.storyId === 'string' && detail.storyId.trim()) nextStoryId = detail.storyId;
       if (detail.storyId === null) nextStoryId = null;
       const origin = detail.origin || 'drawer';
-      const roundActive = Boolean(typeof detail.roundActive === 'boolean' ? detail.roundActive : Boolean(nextStoryId));
+      const metaOnly = origin === 'meta';
+      const roundActive = metaOnly
+        ? activeStoryRoundActiveRef.current
+        : Boolean(typeof detail.roundActive === 'boolean' ? detail.roundActive : Boolean(nextStoryId));
       const detailStoryRaw = detail.story;
       const detailStory = (detailStoryRaw && typeof detailStoryRaw === 'object')
         ? {
@@ -748,7 +743,7 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
       if (origin !== 'sync') {
         emitActiveStory(nextStoryId, roundActive);
       }
-      if (origin === 'drawer') {
+      if (!metaOnly && origin === 'drawer') {
         resetRoundLocal();
         const summaryPayload = detailStory || (nextStoryId ? storyMetaCacheRef.current[nextStoryId] : null);
         try { channelRef.current?.trigger?.('client-reset-round', { storyId: nextStoryId, story: summaryPayload }); } catch {}
@@ -759,12 +754,15 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
             body: JSON.stringify({ userId: user?.id }),
           });
         } catch {}
-      } else if (origin === 'auto') {
+      } else if (!metaOnly && origin === 'auto') {
         resetRoundLocal();
       }
     };
     window.addEventListener('spz:active-story', onActive);
-    return () => window.removeEventListener('spz:active-story', onActive);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('spz:active-story', onActive);
+    };
   }, [sessionId, isDark, ensureStoryMeta, emitActiveStory]);
 
   // Animate SVG pattern on the board (dense thread drift)
@@ -1182,7 +1180,7 @@ export default function RoomShell({ sessionId, sessionName, user, enableFloatNum
                       {storyChipDetail.key}
                     </span>
                   )}
-                  <span className="max-w-[60vw] truncate text-sm font-semibold text-gray-900 dark:text-white">
+                  <span className="max-w-[50vw] truncate text-sm font-semibold text-gray-900 dark:text-white">
                     {storyChipDetail.title || chipTitleText}
                   </span>
                 </div>
