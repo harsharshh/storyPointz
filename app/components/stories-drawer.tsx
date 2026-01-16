@@ -51,17 +51,20 @@ export default function StoriesDrawer({ open, onClose, sessionId }: StoriesDrawe
   return (
     <aside
       className={[
-        'fixed right-0 top-0 z-[61] h-full w-[92vw] max-w-md overflow-y-auto border-l border-black/10 p-4 shadow-2xl transition-transform duration-300',
+        'fixed right-0 top-0 z-[61] h-full w-[92vw] max-w-md overflow-hidden border-l border-black/10 p-4 shadow-2xl transition-transform duration-300',
         'bg-gradient-to-br from-indigo-100 via-emerald-50 to-white dark:border-white/10',
         'dark:bg-[radial-gradient(60%_40%_at_50%_0%,rgba(109,93,246,0.35),transparent_70%),radial-gradient(40%_40%_at_100%_60%,rgba(34,197,94,0.25),transparent_70%),linear-gradient(to_bottom,#0B0B10,rgba(11,11,16,0.85))]',
+        'flex flex-col',
         open ? 'translate-x-0' : 'translate-x-full'
       ].join(' ')}
       aria-hidden={!open}
     >
-      <div className="mb-4 flex items-center justify-between">
+      <div className="mb-4 flex items-center justify-between sticky top-0 z-10 bg-inherit backdrop-blur">
         <div>
-          <h3 className="text-xl font-extrabold text-gray-900 dark:text-white">Stories</h3>
-          <p className="text-xs text-gray-500 dark:text-white/60">1 Story</p>
+          <h3 className="text-xl font-extrabold text-gray-900 dark:text-white">Stories ({stories.length})</h3>
+          <p className="text-xs text-gray-400 dark:text-white/60">
+            You can use ESC button to close the drawer
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <button className="cursor-pointer inline-grid h-9 w-9 place-items-center rounded-lg border border-black/10 text-gray-700 dark:border-white/10 dark:text-white" aria-label="Close" onClick={onClose}>
@@ -71,7 +74,9 @@ export default function StoriesDrawer({ open, onClose, sessionId }: StoriesDrawe
       </div>
 
       {/* Stories list */}
-      <StoriesList sessionId={sessionId} initial={stories} />
+      <div className="flex-1 overflow-y-auto pt-2">
+        <StoriesList sessionId={sessionId} initial={stories} />
+      </div>
     </aside>
   );
 }
