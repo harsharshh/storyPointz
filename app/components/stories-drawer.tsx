@@ -63,7 +63,7 @@ export default function StoriesDrawer({ open, onClose, sessionId }: StoriesDrawe
         <div>
           <h3 className="text-xl font-extrabold text-gray-900 dark:text-white">Stories ({stories.length})</h3>
           <p className="text-xs text-gray-400 dark:text-white/60">
-            You can use ESC button to close the drawer
+            Press ESC button to close the drawer
           </p>
         </div>
         <div className="flex items-center gap-2">
