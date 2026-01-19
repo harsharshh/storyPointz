@@ -319,10 +319,21 @@ export default function UserMenu({ userName = 'Guest user', variant = 'avatar', 
           </div>
           <div className="px-4 pb-3">
             <button
-              className="w-full rounded-xl bg-emerald-600 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-emerald-500 dark:bg-emerald-500"
+              className="w-full rounded-xl bg-indigo-600 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-indigo-500"
               onClick={() => { setOpen(false); openSessionsModal('mine'); }}
             >
               My Sessions
+            </button>
+          </div>
+          <div className="px-4 pb-3">
+            <button
+              className="w-full rounded-xl bg-emerald-600 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-emerald-500 dark:bg-emerald-500"
+              onClick={() => {
+                setOpen(false);
+                window.open('/session/new', '_blank', 'noopener,noreferrer');
+              }}
+            >
+              + New Session
             </button>
           </div>
 
@@ -330,6 +341,33 @@ export default function UserMenu({ userName = 'Guest user', variant = 'avatar', 
 
           {/* Items */}
           <ul className="py-2 text-sm">
+            
+
+            <li className="px-4 py-2 flex justify-center">
+              <button
+                onClick={() => {
+                  setOpen(false);
+                  window.open('https://retro-scope.vercel.app/', '_blank', 'noopener,noreferrer');
+                }}
+                className="flex items-center justify-center gap-3 rounded-lg cursor-pointer"
+              >
+                <div className="flex items-center gap-2">
+                  <span
+                    className="text-sm font-extrabold tracking-tight bg-clip-text text-transparent"
+                    style={{
+                      backgroundImage: 'linear-gradient(90deg,#2ed3b7 0%,#ff8c39 50%,#b362ff 100%)'
+                    }}
+                  >
+                    RetroScope
+                  </span>
+                  <span className="rounded-full bg-gradient-to-r from-[#2ed3b7] via-[#ff8c39] to-[#b362ff] px-2 py-0.5 text-[10px] font-bold text-white">
+                    NEW
+                  </span>
+                </div>
+              </button>
+            </li>
+
+            <li className="my-2 border-t border-black/5 dark:border-white/10" />
             {/* <MenuItem
               icon={<svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M8 6h13M8 12h13M8 18h13"/><rect x="3" y="4" width="4" height="4" rx="1"/><rect x="3" y="10" width="4" height="4" rx="1"/><rect x="3" y="16" width="4" height="4" rx="1"/></svg>}
               label="My games"
