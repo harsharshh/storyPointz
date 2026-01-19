@@ -43,7 +43,7 @@ export default function FloatingNumbers({ values, seed, count = 18, isDark = fal
         const value = values[Math.floor(rng() * values.length)];
         const depth = 0.6 + (col / cols) * 0.9; // slower on left, faster on right
         const scale = 0.8 + rng() * 0.6;
-        const opacity = isDark ? 0.01 + rng() * 0.010 : 0.025 + rng() * 0.035;
+        const opacity = isDark ? 0.035 + rng() * 0.028 : 0.056 + rng() * 0.042;
         out.push({ value, x: cx, y: cy, scale, rot: 0, opacity, depth });
       }
     } else {
@@ -68,7 +68,7 @@ export default function FloatingNumbers({ values, seed, count = 18, isDark = fal
           const value = values[Math.floor(rng() * values.length)];
           const scale = 0.7 + rng() * 0.9;
           const rot = Math.floor(rng() * 46) - 23;
-          const opacity = isDark ? 0.01 + rng() * 0.010 : 0.025 + rng() * 0.035;
+          const opacity = isDark ? 0.035 + rng() * 0.028 : 0.056 + rng() * 0.042;
           out.push({ value, x: cx, y: cy, scale, rot, opacity });
           idx++;
         }
@@ -79,7 +79,7 @@ export default function FloatingNumbers({ values, seed, count = 18, isDark = fal
         const y = Math.floor(rng() * 100);
         const scale = 0.7 + rng() * 0.9;
         const rot = Math.floor(rng() * 46) - 23;
-        const opacity = isDark ? 0.01 + rng() * 0.010 : 0.025 + rng() * 0.035;
+        const opacity = isDark ? 0.035 + rng() * 0.028 : 0.056 + rng() * 0.042;
         out.push({ value, x, y, scale, rot, opacity });
       }
     }
@@ -147,12 +147,12 @@ export default function FloatingNumbers({ values, seed, count = 18, isDark = fal
             style={{
               left: `${item.x}%`,
               top: `${item.y}%`,
-              opacity: Math.min(0.25, Math.max(0.02, item.opacity * (isDark ? 0.6 : 1.35))),
+              opacity: Math.min(0.25, Math.max(0.06, item.opacity * (isDark ? 0.75 : 1.15))),
               transform: `translate(-50%, -50%) scale(${item.scale}) rotate(${item.rot}deg)`,
               willChange: 'transform, opacity',
             }}
-            width="64"
-            height="64"
+            width="96"
+            height="96"
             viewBox="0 0 64 64"
             aria-hidden
           >
@@ -161,8 +161,18 @@ export default function FloatingNumbers({ values, seed, count = 18, isDark = fal
                 <stop offset="0%" stopColor={g1} />
                 <stop offset="100%" stopColor={g2} />
               </linearGradient>
+              <filter id={`${gid}_glow`} x="-50%" y="-50%" width="200%" height="200%">
+                <feGaussianBlur stdDeviation="1.4" result="blur" />
+                <feMerge>
+                  <feMergeNode in="blur" />
+                  <feMergeNode in="SourceGraphic" />
+                </feMerge>
+              </filter>
             </defs>
-            <text x="32" y="40" textAnchor="middle" fontSize="28" fontWeight="800" fill={`url(#${gid})`}>
+            <text
+              x="32" y="40" textAnchor="middle" fontSize="28" fontWeight="800" fill={`url(#${gid})`}
+              filter={`url(#${gid}_glow)`}
+            >
               {item.value}
             </text>
           </svg>
